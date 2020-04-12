@@ -21,4 +21,4 @@
 #define WM_DO_STR(x) #x
 #define WM_STR(x)  WM_DO_STR(x)
 
-#endif // WM_DEFS_H
+#endif /* WM_DEFS_H */

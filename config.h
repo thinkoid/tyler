@@ -5,4 +5,4 @@
 
 #include <defs.h>
 
-#endif // WM_CONFIG_H
+#endif /* WM_CONFIG_H */
