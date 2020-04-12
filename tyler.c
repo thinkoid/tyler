@@ -8,9 +8,11 @@
 #include <signal.h>
 #include <sys/wait.h>
 
+static int running = 1;
+
 /**********************************************************************/
 
-xstatic void sigchld_handler(int ignore)
+static void sigchld_handler(int ignore)
 {
         UNUSED(ignore);
         while (0 < waitpid(-1, 0, WNOHANG))
@@ -27,19 +29,40 @@ static void setup_sigchld()
 
 /**********************************************************************/
 
+static void handle_event(XEvent *arg)
+{
+        UNUSED(arg);
+}
+
+/**********************************************************************/
+
+static void init_display()
+{
+        make_display(0);
+        ASSERT(DPY);
+        atexit(free_display);
+}
+
+static void init()
+{
+        setup_sigchld();
+        init_display();
+}
+
+static void run()
+{
+        XEvent ev;
+
+        XSync(DPY, 0);
+
+        for (; running && !XNextEvent(DPY, &ev);) {
+                handle_event(&ev);
+        }
+
+        XSync(DPY, 1);
+}
+
 int main()
 {
-        Display *dpy;
-
-        dpy = DPY;
-        ASSERT(0 == dpy);
-
-        dpy = make_display(0);
-        ASSERT(dpy);
-
-        atexit(&free_display);
-
-        setup_sigchld();
-
-        return 0;
+        return init(), run(), 0;
 }
