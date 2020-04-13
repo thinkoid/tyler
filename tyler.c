@@ -3,6 +3,7 @@
 #include <defs.h>
 #include <config.h>
 #include <color.h>
+#include <cursor.h>
 #include <display.h>
 
 #include <stdio.h>
@@ -51,11 +52,18 @@ static void init_colors()
         atexit(free_colors);
 }
 
+static void init_cursors()
+{
+        make_cursors(cursors, SIZEOF(cursors));
+        atexit(free_cursors);
+}
+
 static void init()
 {
         setup_sigchld();
         init_display();
         init_colors();
+        init_cursors();
 }
 
 static void run()
@@ -64,9 +72,8 @@ static void run()
 
         XSync(DPY, 0);
 
-        for (; running && !XNextEvent(DPY, &ev);) {
+        for (; running && !XNextEvent(DPY, &ev);)
                 handle_event(&ev);
-        }
 
         XSync(DPY, 1);
 }
