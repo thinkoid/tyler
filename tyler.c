@@ -5,6 +5,7 @@
 #include <color.h>
 #include <cursor.h>
 #include <display.h>
+#include <error.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,9 +62,12 @@ static void init_cursors()
 static void init()
 {
         setup_sigchld();
+
         init_display();
         init_colors();
         init_cursors();
+
+        init_error_handling();
 }
 
 static void run()
