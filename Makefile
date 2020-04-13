@@ -13,7 +13,9 @@ PANGO_LIBS     = $(shell pkg-config --libs   pangoxft)
 X11_CPPFLAGS = $(shell pkg-config --cflags x11 xinerama xft)
 X11_LIBS     = $(shell pkg-config --libs   x11 xinerama xft)
 
-WARNINGS =
+WARNINGS = \
+	-Wno-deprecated-declarations
+
 CFLAGS = -g -O -std=c89 -W -Wall $(WARNINGS)
 
 CPPFLAGS  = -DXINERAMA -DVERSION=$(VERSION) \
