@@ -9,7 +9,14 @@ Display *g_display = 0;
 
 Display *make_display(const char *s)
 {
-        return g_display = XOpenDisplay(s);
+        if (0 == g_display) {
+                if (0 == (g_display = XOpenDisplay(s))) {
+                        fprintf(stderr, "failed to open display %s\n", s);
+                        exit(1);
+                }
+        }
+
+        return g_display;
 }
 
 void free_display()
@@ -25,7 +32,7 @@ void release_display()
         if (g_display) {
                 close(ConnectionNumber(g_display));
                 g_display = 0;
-        };
+        }
 }
 
 Display *display()
