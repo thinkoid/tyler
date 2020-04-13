@@ -8,9 +8,9 @@
 
 #include <X11/Xlib.h>
 
-Display *make_display(const char *);
-void free_display();
+void make_display(const char *s);
 
+void free_display();
 void release_display();
 
 Display *display();

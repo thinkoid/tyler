@@ -21,4 +21,6 @@
 #define WM_DO_STR(x) #x
 #define WM_STR(x) WM_DO_STR(x)
 
+#define SIZEOF(arr) (sizeof(arr) / sizeof(*arr))
+
 #endif /* WM_DEFS_H */

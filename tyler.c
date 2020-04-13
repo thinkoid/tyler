@@ -1,6 +1,8 @@
 /* -*- mode: c; -*- */
 
 #include <defs.h>
+#include <config.h>
+#include <color.h>
 #include <display.h>
 
 #include <stdio.h>
@@ -43,10 +45,17 @@ static void init_display()
         atexit(free_display);
 }
 
+static void init_colors()
+{
+        make_colors(colors, SIZEOF(colors));
+        atexit(free_colors);
+}
+
 static void init()
 {
         setup_sigchld();
         init_display();
+        init_colors();
 }
 
 static void run()

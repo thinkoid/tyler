@@ -2,12 +2,14 @@
 
 #include <display.h>
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
 
 Display *g_display = 0;
 
-Display *make_display(const char *s)
+void make_display(const char *s)
 {
         if (0 == g_display) {
                 if (0 == (g_display = XOpenDisplay(s))) {
@@ -15,8 +17,6 @@ Display *make_display(const char *s)
                         exit(1);
                 }
         }
-
-        return g_display;
 }
 
 void free_display()
