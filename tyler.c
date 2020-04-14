@@ -1,6 +1,7 @@
 /* -*- mode: c; -*- */
 
 #include <defs.h>
+#include <atom.h>
 #include <config.h>
 #include <color.h>
 #include <cursor.h>
@@ -13,6 +14,7 @@
 #include <sys/wait.h>
 
 #include <X11/X.h>
+#include <X11/Xatom.h>
 #include <X11/keysym.h>
 
 #define BUTTONMASK (ButtonPressMask | ButtonReleaseMask)
@@ -23,6 +25,13 @@
 #define ALLMODMASK (Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask)
 
 #define CLEANMASK(x) ((x) & ~LOCKMASK & (ShiftMask | ControlMask | ALLMODMASK))
+
+#define ROOTMASK (0                             \
+        | SubstructureRedirectMask              \
+        | SubstructureNotifyMask                \
+        | ButtonPressMask                       \
+        | PropertyChangeMask)
+
 
 static int g_running = 1;
 static unsigned g_numlockmask = 0;
@@ -55,6 +64,9 @@ static void update_numlockmask()
 {
         g_numlockmask = numlockmask();
 }
+
+static void grab_keys (Window win);
+static void grab_buttons (Window win, int focus);
 
 /**********************************************************************/
 
@@ -281,6 +293,69 @@ static int handle_event(XEvent *arg)
 
         return 0;
 }
+
+/**********************************************************************/
+
+static void do_grab_keys(Window win, unsigned mod, KeyCode keycode)
+{
+#define GRAB(x)                                                         \
+        XGrabKey(DPY, keycode, mod | x, win, 1, GrabModeAsync, GrabModeAsync)
+
+        GRAB(0);
+        GRAB(LockMask);
+        GRAB(g_numlockmask);
+        GRAB(LockMask | g_numlockmask);
+
+#undef GRAB
+}
+
+static void ungrab_keys(Window win)
+{
+        XUngrabKey(DPY, AnyKey, AnyModifier, win);
+}
+
+static void grab_keys(Window win)
+{
+        KeyCode keycode;
+        keycmd_t *p = g_keycmds, *pend = g_keycmds + SIZEOF(g_keycmds);
+
+        update_numlockmask();
+
+        ungrab_keys(win);
+        for (; p != pend; ++p)
+                if ((keycode = XKeysymToKeycode (DPY, p->keysym)))
+                        do_grab_keys(win, p->mod, keycode);
+}
+
+/**********************************************************************/
+
+static void setup_root_supported_atoms()
+{
+        Atom *p = atoms();
+        size_t n = atoms_size();
+
+        XChangeProperty(DPY, ROOT, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace,
+                        (unsigned char *)p, n);
+}
+
+static void setup_root_masks_and_cursor()
+{
+        XSetWindowAttributes x = { 0 };
+
+        x.event_mask = ROOTMASK;
+        x.cursor = NORMAL_CURSOR;
+
+        XChangeWindowAttributes(DPY, ROOT, CWEventMask | CWCursor, &x);
+}
+
+static void setup_root()
+{
+        setup_root_masks_and_cursor();
+        setup_root_supported_atoms();
+
+        grab_keys(ROOT);
+}
+
 /**********************************************************************/
 
 static void init_display()
@@ -316,6 +391,8 @@ static void init()
         init_colors();
         init_cursors();
         init_error_handling();
+
+        setup_root();
 }
 
 static void run()

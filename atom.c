@@ -39,6 +39,16 @@ Atom atom(enum atom_sym sym)
         return g_atoms[sym];
 }
 
+Atom* atoms()
+{
+        return g_atoms;
+}
+
+size_t atoms_size()
+{
+        return SIZEOF(g_atoms);
+}
+
 Atom atomic_property(Window win, Atom prop)
 {
         int i;
