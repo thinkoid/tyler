@@ -13,4 +13,6 @@ static const char *colors[] = { "#444444", "#222222", "#BBBBBB",
 
 static const int cursors[] = { XC_top_left_arrow, XC_sizing, XC_fleur };
 
+static const char *termcmd[] = { "st", "-f", "Fira Code Retina:size=10", 0 };
+
 #endif /* WM_CONFIG_H */

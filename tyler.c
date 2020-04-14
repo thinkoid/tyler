@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <X11/X.h>
 #include <X11/Xatom.h>
@@ -93,9 +94,26 @@ static int zoom()
         return 0;
 }
 
+static int spawn(char **args)
+{
+        if (0 == fork()) {
+                release_display();
+
+                setsid();
+                execvp(args[0], args);
+
+                fprintf(stderr, "dwm: execvp %s", args[0]);
+                perror(" failed");
+
+                exit(0);
+        }
+
+        return 0;
+}
+
 static int spawn_terminal()
 {
-        return 0;
+        return spawn((char **)termcmd);
 }
 
 static int toggle_bar()
@@ -191,21 +209,27 @@ static keycmd_t g_keycmds[] = {
         /* clang-format on */
 };
 
-static int key_press_handler(XEvent *arg)
+static int do_key_press_handler(KeySym keysym, unsigned mod)
 {
-        XKeyEvent *ev = &arg->xkey;
-
-        KeySym keysym = XKeycodeToKeysym(DPY, (KeyCode)ev->keycode, 0);
-        unsigned mod = CLEANMASK(ev->state);
+        keycmd_t *p = g_keycmds, *pend = g_keycmds + SIZEOF(g_keycmds);
 
         update_numlockmask();
 
-        keycmd_t *p = g_keycmds, *pend = g_keycmds + SIZEOF(g_keycmds);
         for (; p != pend; ++p)
                 if (keysym == p->keysym && mod == CLEANMASK(p->mod) && p->fun)
                         return p->fun();
 
         return 0;
+}
+
+static int key_press_handler(XEvent *arg)
+{
+        XKeyEvent *ev = &arg->xkey;
+
+        KeySym keysym = XKeycodeToKeysym(DPY, ev->keycode, 0);
+        unsigned mod = CLEANMASK(ev->state);
+
+        return do_key_press_handler(keysym, mod);
 }
 
 static int button_press_handler(XEvent *arg)
@@ -306,9 +330,9 @@ static void grab_keys(Window win)
 
         XUngrabKey(DPY, AnyKey, AnyModifier, win);
 
-#define GRABKEYS(x)                                             \
-        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1,    \
-                 GrabModeAsync, GrabModeAsync)
+#define GRABKEYS(x)                                                            \
+        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1, GrabModeAsync,    \
+                 GrabModeAsync)
 
         for (i = 0; i < SIZEOF(g_keycmds); ++i)
                 if ((keycode = XKeysymToKeycode(DPY, g_keycmds[i].keysym))) {
