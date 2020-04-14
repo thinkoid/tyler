@@ -290,6 +290,11 @@ static void init_display()
         atexit(free_display);
 }
 
+static void init_atoms()
+{
+        make_atoms();
+}
+
 static void init_colors()
 {
         make_colors(colors, SIZEOF(colors));
@@ -307,9 +312,9 @@ static void init()
         setup_sigchld();
 
         init_display();
+        init_atoms();
         init_colors();
         init_cursors();
-
         init_error_handling();
 }
 
