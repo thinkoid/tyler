@@ -4,7 +4,6 @@
 #define WM_COLOR_H
 
 #include <defs.h>
-#include <geometry.h>
 
 #include <X11/Xlib.h>
 

@@ -38,6 +38,57 @@
 static int g_running = 1;
 static unsigned g_numlockmask = 0;
 
+typedef struct state {
+        geom_t g;
+        unsigned fixed : 1, floating : 1, transient : 1, urgent : 1,
+                noinput : 1, fullscreen : 1;
+        unsigned tags;
+} state_t;
+
+typedef struct aspect {
+        float min, max;
+} aspect_t;
+
+typedef struct screen screen_t;
+typedef struct client client_t;
+
+typedef struct client {
+        Window win;
+
+        aspect_t aspect;
+        ext_t base, inc, max, min;
+
+        state_t state[2];
+        int current_state;
+
+        /* List link to next client, next client in stack */
+        client_t *next, *focus_next;
+        screen_t *screen;
+} client_t;
+
+struct screen {
+        rect_t r;
+
+        int master_size;
+        float master_ratio;
+
+        /* Client list, stack list, current client shortcut */
+        client_t *client_head, *focus_head, *client_cur;
+
+        /* Next screen in screen list */
+        screen_t *next;
+};
+
+static screen_t *screen_head = 0;
+
+/**********************************************************************/
+
+static client_t* make_client(Window win, const screen_t* screen)
+{
+        UNUSED(win);
+        UNUSED(screen);
+}
+
 /**********************************************************************/
 
 static unsigned numlockmask()
