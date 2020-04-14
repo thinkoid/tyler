@@ -83,7 +83,7 @@ static screen_t *screen_head = 0;
 
 /**********************************************************************/
 
-static client_t* make_client(Window win, const screen_t* screen)
+static client_t *make_client(Window win, const screen_t *screen)
 {
         UNUSED(win);
         UNUSED(screen);
