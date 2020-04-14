@@ -297,35 +297,27 @@ static int handle_event(XEvent *arg)
 
 /**********************************************************************/
 
-static void do_grab_keys(Window win, unsigned mod, KeyCode keycode)
-{
-#define GRAB(x)                                                                \
-        XGrabKey(DPY, keycode, mod | x, win, 1, GrabModeAsync, GrabModeAsync)
-
-        GRAB(0);
-        GRAB(LockMask);
-        GRAB(g_numlockmask);
-        GRAB(LockMask | g_numlockmask);
-
-#undef GRAB
-}
-
-static void ungrab_keys(Window win)
-{
-        XUngrabKey(DPY, AnyKey, AnyModifier, win);
-}
-
 static void grab_keys(Window win)
 {
+        size_t i;
         KeyCode keycode;
-        keycmd_t *p = g_keycmds, *pend = g_keycmds + SIZEOF(g_keycmds);
 
         update_numlockmask();
 
-        ungrab_keys(win);
-        for (; p != pend; ++p)
-                if ((keycode = XKeysymToKeycode(DPY, p->keysym)))
-                        do_grab_keys(win, p->mod, keycode);
+        XUngrabKey(DPY, AnyKey, AnyModifier, win);
+
+#define GRABKEYS(x)                                             \
+        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1,    \
+                 GrabModeAsync, GrabModeAsync)
+
+        for (i = 0; i < SIZEOF(g_keycmds); ++i)
+                if ((keycode = XKeysymToKeycode(DPY, g_keycmds[i].keysym))) {
+                        GRABKEYS(0);
+                        GRABKEYS(LockMask);
+                        GRABKEYS(g_numlockmask);
+                        GRABKEYS(g_numlockmask | LockMask);
+                }
+#undef GRABKEYS
 }
 
 /**********************************************************************/
