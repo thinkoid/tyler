@@ -26,12 +26,13 @@
 
 #define CLEANMASK(x) ((x) & ~LOCKMASK & (ShiftMask | ControlMask | ALLMODMASK))
 
+/* clang-format off */
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
         | ButtonPressMask                       \
         | PropertyChangeMask)
-
+/* clang-format on */
 
 static int g_running = 1;
 static unsigned g_numlockmask = 0;
@@ -65,8 +66,8 @@ static void update_numlockmask()
         g_numlockmask = numlockmask();
 }
 
-static void grab_keys (Window win);
-static void grab_buttons (Window win, int focus);
+static void grab_keys(Window win);
+static void grab_buttons(Window win, int focus);
 
 /**********************************************************************/
 
@@ -298,7 +299,7 @@ static int handle_event(XEvent *arg)
 
 static void do_grab_keys(Window win, unsigned mod, KeyCode keycode)
 {
-#define GRAB(x)                                                         \
+#define GRAB(x)                                                                \
         XGrabKey(DPY, keycode, mod | x, win, 1, GrabModeAsync, GrabModeAsync)
 
         GRAB(0);
@@ -323,7 +324,7 @@ static void grab_keys(Window win)
 
         ungrab_keys(win);
         for (; p != pend; ++p)
-                if ((keycode = XKeysymToKeycode (DPY, p->keysym)))
+                if ((keycode = XKeysymToKeycode(DPY, p->keysym)))
                         do_grab_keys(win, p->mod, keycode);
 }
 

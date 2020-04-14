@@ -22,7 +22,7 @@ void make_atoms();
 
 Atom atom(enum atom_sym sym);
 
-Atom* atoms();
+Atom *atoms();
 size_t atoms_size();
 
 #define WM_PROTOCOLS (atom(ATOM_WM_PROTOCOLS))

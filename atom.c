@@ -39,7 +39,7 @@ Atom atom(enum atom_sym sym)
         return g_atoms[sym];
 }
 
-Atom* atoms()
+Atom *atoms()
 {
         return g_atoms;
 }
