@@ -26,6 +26,4 @@ Display *display();
 int display_width();
 int display_height();
 
-void display_geometry(ext_t *ext);
-
 #endif /* WM_DISPLAY_H */

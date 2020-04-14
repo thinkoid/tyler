@@ -49,9 +49,3 @@ int display_height()
 {
         return DisplayHeight(DPY, SCRN);
 }
-
-void display_geometry(ext_t *ext)
-{
-        ext->w = display_width();
-        ext->h = display_height();
-}
