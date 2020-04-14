@@ -21,12 +21,14 @@ enum color_type {
 
 color_t color(enum color_type type);
 
-#define NORMAL_BORDER (color(COLOR_NORMAL_BORDER))
-#define NORMAL_BG (color(COLOR_NORMAL_BACKGROUND))
-#define NORMAL_FG (color(COLOR_NORMAL_FOREGROUND))
-#define SELECT_BORDER (color(COLOR_SELECT_BORDER))
-#define SELECT_BG (color(COLOR_SELECT_BACKGROUND))
-#define SELECT_FG (color(COLOR_SELECT_FOREGROUND))
+/* clang-format off */
+#define NORMAL_BORDER  (color(COLOR_NORMAL_BORDER))
+#define NORMAL_BG      (color(COLOR_NORMAL_BACKGROUND))
+#define NORMAL_FG      (color(COLOR_NORMAL_FOREGROUND))
+#define SELECT_BORDER  (color(COLOR_SELECT_BORDER))
+#define SELECT_BG      (color(COLOR_SELECT_BACKGROUND))
+#define SELECT_FG      (color(COLOR_SELECT_FOREGROUND))
+/* clang-format on */
 
 void make_colors(const char **pp, size_t n);
 void free_colors();

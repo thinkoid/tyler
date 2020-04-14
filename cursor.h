@@ -16,8 +16,10 @@ cursor_t cursor(enum cursor_type type);
 void make_cursors(const int *p, size_t n);
 void free_cursors();
 
+/* clang-format off */
 #define NORMAL_CURSOR (cursor(CURSOR_NORMAL))
 #define RESIZE_CURSOR (cursor(CURSOR_RESIZE))
-#define MOVE_CURSOR (cursor(CURSOR_MOVE))
+#define MOVE_CURSOR   (cursor(CURSOR_MOVE))
+/* clang-format on */
 
 #endif /* WM_CURSOR_H */
