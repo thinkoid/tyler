@@ -2,14 +2,17 @@
 
 #include <defs.h>
 #include <atom.h>
-#include <config.h>
 #include <color.h>
+#include <config.h>
 #include <cursor.h>
 #include <display.h>
 #include <error.h>
+#include <window.h>
+#include <xlib.h>
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -18,6 +21,11 @@
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
 
+#if defined(XINERAMA)
+#include <X11/extensions/Xinerama.h>
+#endif /* XINERAMA */
+
+/* clang-format off */
 #define BUTTONMASK (ButtonPressMask | ButtonReleaseMask)
 
 #define MODKEY Mod4Mask
@@ -27,16 +35,31 @@
 
 #define CLEANMASK(x) ((x) & ~LOCKMASK & (ShiftMask | ControlMask | ALLMODMASK))
 
-/* clang-format off */
+#define GEOM(c) (&c->state[c->current_state].g)
+
+#define  WIDTH(c) (GEOM(c)->r.w + 2 * GEOM(c)->bw)
+#define HEIGHT(c) (GEOM(c)->r.h + 2 * GEOM(c)->bw)
+
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
         | ButtonPressMask                       \
         | PropertyChangeMask)
+
+#define CLIENTMASK (0                           \
+        | EnterWindowMask                       \
+        | FocusChangeMask                       \
+        | PropertyChangeMask)
 /* clang-format on */
 
+#if defined(XINERAMA)
+typedef XineramaScreenInfo xi_t;
+#endif /* XINERAMA */
+
+typedef int(*qsort_cmp_t)(const void *, const void *);
+
 static int g_running = 1;
-static unsigned g_numlockmask = 0;
+static unsigned g_numlockmask /* = 0 */;
 
 typedef struct state {
         geom_t g;
@@ -49,14 +72,18 @@ typedef struct aspect {
         float min, max;
 } aspect_t;
 
+typedef struct size_hints {
+        aspect_t aspect;
+        ext_t base, inc, max, min;
+} size_hints_t;
+
 typedef struct screen screen_t;
 typedef struct client client_t;
 
 typedef struct client {
         Window win;
 
-        aspect_t aspect;
-        ext_t base, inc, max, min;
+        size_hints_t size_hints;
 
         state_t state[2];
         int current_state;
@@ -69,24 +96,368 @@ typedef struct client {
 struct screen {
         rect_t r;
 
+        unsigned tags;
+        int showbar, bh;
+
         int master_size;
         float master_ratio;
 
         /* Client list, stack list, current client shortcut */
-        client_t *client_head, *focus_head, *client_cur;
+        client_t *client_head, *focus_head, *current_client;
 
         /* Next screen in screen list */
         screen_t *next;
 };
 
-static screen_t *screen_head = 0;
+static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
 /**********************************************************************/
 
-static client_t *make_client(Window win, const screen_t *screen)
+static int
+xi_greater_x_then_y(const xi_t **a, const xi_t **b)
 {
-        UNUSED(win);
-        UNUSED(screen);
+        xi_t const *lhs = *a, *rhs = *b;
+        return   lhs->x_org  > rhs->x_org ||
+                (lhs->x_org == rhs->x_org && lhs->y_org > rhs->y_org);
+}
+
+static int
+xi_greater_screen_number(const xi_t **a, const xi_t **b)
+{
+        xi_t const *lhs = *a, *rhs = *b;
+        return lhs->screen_number > rhs->screen_number;
+}
+
+static int
+xi_eq(const xi_t *lhs, const xi_t *rhs)
+{
+        return lhs->x_org == rhs->x_org && lhs->y_org == rhs->y_org;
+}
+
+static void
+unique_xinerama_geometries(xi_t ***pptr, xi_t **pend)
+{
+        xi_t **p = *pptr;
+
+        for (; p != pend; ++p)
+                if (*pptr != p && !xi_eq(**pptr, *p))
+                        if (++*pptr != p)
+                                **pptr = *p;
+
+        ++*pptr;
+}
+
+static rect_t *get_xinerama_screen_geometries(rect_t *buf, size_t *buflen)
+{
+        qsort_cmp_t by_x_then_y      = (qsort_cmp_t)xi_greater_x_then_y;
+        qsort_cmp_t by_screen_number = (qsort_cmp_t)xi_greater_screen_number;
+
+        rect_t *pbuf = buf, *dst;
+        int i, n;
+
+        xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis, *src;
+
+        ASSERT(buf);
+        ASSERT(buflen);
+
+        if ((xis = XineramaQueryScreens(DPY, &n))) {
+                ASSERT (n > 0);
+
+                if ((size_t)n > SIZEOF(pxis)) {
+                        ppxis = malloc(n * sizeof *ppxis);
+                }
+
+                for (i = 0; i < n; ++i)
+                        ppxis[i] = xis + i;
+
+                /*
+                 * Sort the geometries by x, then y if x is same:
+                 */
+                qsort(ppxis, n, sizeof *ppxis, by_x_then_y);
+
+                /*
+                 * Eliminate duplicate geometries:
+                 */
+                unique_xinerama_geometries(&p, ppxis + n);
+                n = p - ppxis;
+
+                /*
+                 * Sort back by the screen number:
+                 */
+                qsort(ppxis, n, sizeof *ppxis, by_screen_number);
+
+                if ((size_t)n > *buflen) {
+                        pbuf = malloc(n * sizeof *pbuf);
+                }
+
+                *buflen = n;
+
+                for (i = 0; i < n; ++i, ++src, ++dst) {
+                        src = ppxis[i];
+                        dst = pbuf;
+
+                        dst->x = src->x_org;
+                        dst->y = src->y_org;
+                        dst->w = src->width;
+                        dst->h = src->height;
+                }
+
+                XFree(xis);
+
+                if (ppxis != pxis)
+                        free(ppxis);
+
+                return pbuf;
+        }
+
+        return 0;
+}
+
+static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
+{
+#if defined (XINERAMA)
+        if (XineramaIsActive (DPY)) {
+                return get_xinerama_screen_geometries(buf, buflen);
+        } else
+#endif /* XINERAMA */
+        {
+                ASSERT(buf);
+                ASSERT(buflen && buflen[0]);
+
+                buf->x = 0;
+                buf->y = 0;
+                buf->w = display_width();
+                buf->h = display_height();
+
+                buflen[0] = 1;
+
+                return buf;
+        }
+}
+
+static screen_t *make_screen(int i, rect_t *r)
+{
+        screen_t *s = malloc(sizeof *s);
+        memset(s, 0, sizeof *s);
+
+        s->r.x = r->x;
+        s->r.y = r->y;
+        s->r.w = r->w;
+        s->r.h = r->h;
+
+        s->tags = 1U << (i + 1);
+
+        s->showbar = config_showbar();
+        s->bh      = config_bar_height();
+
+        s->master_size  = config_master_size();
+        s->master_ratio = config_master_ratio();
+
+        s->client_head = s->focus_head = s->current_client = 0;
+        s->next = 0;
+
+        return s;
+}
+
+static void make_screens()
+{
+        screen_t **pptr = &screen_head;
+
+        rect_t buf[16], *pbuf = buf;
+        size_t i, n = SIZEOF(buf);
+
+        pbuf = get_all_screens_geometries(buf, &n);
+        ASSERT(pbuf);
+
+        for (i = 0; i < n; ++i) {
+                *pptr = make_screen(i, pbuf + i);
+                pptr = &(*pptr)->next;
+        }
+
+        if (pbuf != buf)
+                free(pbuf);
+
+        ASSERT(screen_head);
+        current_screen = screen_head;
+}
+
+static void free_screens()
+{
+        screen_t *p = screen_head, *pnext;
+        for (screen_head = 0; p; pnext = p->next, free(p), p = pnext) ;
+}
+
+/**********************************************************************/
+
+static client_t *client_of(Window win)
+{
+        client_t *c;
+        screen_t *s;
+
+        for (s = screen_head; s; s = s->next)
+                for (c = s->client_head; c; c = c->next)
+                        if (win == c->win)
+                                return c;
+
+        return 0;
+}
+
+static int is_managed(Window win)
+{
+        return 0 != client_of(win);
+}
+
+static client_t *transient_client_of(Window win)
+{
+        Window other;
+        return (other = transient_for_property(win)) ? client_of(other) : 0;
+}
+
+static void send_client_configuration(const client_t *c)
+{
+        const state_t *state;
+
+        XConfigureEvent x;
+
+        x.type = ConfigureNotify;
+        x.display = DPY;
+
+        x.event = c->win;
+        x.window = c->win;
+
+        state = &c->state[c->current_state];
+
+        x.x = state->g.r.x;
+        x.y = state->g.r.y;
+        x.width  = state->g.r.w;
+        x.height = state->g.r.h;
+
+        x.border_width = state->g.bw;
+
+        x.above = None;
+        x.override_redirect = False;
+
+        XSendEvent(DPY, c->win, False, StructureNotifyMask, (XEvent *)&x);
+}
+
+static void update_client_size_hints(client_t *c)
+{
+        state_t *state = &c->state[c->current_state];
+        size_hints_t *h = &c->size_hints;
+
+        XSizeHints x = { 0 };
+
+        /*
+         * Digest the raw size hints :
+         */
+        size_hints(c->win, &x);
+        fill_size_hints_defaults(&x);
+
+        h->aspect.min = x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
+        h->aspect.max = x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
+
+        h->base.w = x.base_width;
+        h->base.h = x.base_height;
+
+        h->inc.w = x.width_inc;
+        h->inc.h = x.height_inc;
+
+        h->min.w = x.min_width;
+        h->min.h = x.min_height;
+
+        h->max.w = x.max_width;
+        h->max.h = x.max_height;
+
+        state->fixed = h->max.w == h->min.w && h->max.h == h->min.h;
+}
+
+static void update_client_wm_hints(client_t *c)
+{
+        state_t *state;
+        XWMHints *hints;
+
+        if ((hints = wm_hints(c->win))) {
+                state = &c->state[c->current_state];
+
+                state->urgent  = !!(hints->flags & XUrgencyHint);
+                state->noinput = ((hints->flags & InputHint) && !hints->input);
+
+                XFree(hints);
+        }
+}
+
+static client_t *make_client(Window win, XWindowAttributes *attr)
+{
+        client_t *transient;
+
+        state_t *state;
+        geom_t *geom;
+
+        client_t *c = malloc(sizeof(client_t));
+        memset(c, 0, sizeof *c);
+
+        c->win = win;
+
+        state = &c->state[c->current_state];
+        geom = &state->g;
+
+        geom->r.x = attr->x;
+        geom->r.y = attr->y;
+        geom->r.w = attr->width;
+        geom->r.h = attr->height;
+
+        geom->bw = config_border_width();
+
+        /*
+         * Set window border width, color, and send client geometry information:
+         */
+        set_default_window_border(win);
+        send_client_configuration(c);
+
+        /*
+         * Transient property and the borrowing of tags from its parent should
+         * take place only once, upon initialization:
+         */
+        if ((transient = transient_client_of(win))) {
+                c->screen = transient->screen;
+                state->tags = transient->state[transient->current_state].tags;
+                state->transient = 1;
+        } else {
+                c->screen = current_screen;
+                state->tags = current_screen->tags;
+        }
+
+        update_client_size_hints(c);
+        update_client_wm_hints(c);
+
+        state->fullscreen = is_fullscreen(c->win);
+        state->floating = state->transient || state->fixed;
+
+        return c;
+}
+
+static void grab_keys(Window win);
+static void grab_buttons(Window win, int focus);
+
+static int focus(client_t *c)
+{
+        UNUSED(c);
+
+        XRaiseWindow(DPY, c->win);
+        grab_buttons(c->win, 1);
+        ASSERT(0);
+
+        return 0;
+}
+
+static client_t *manage(Window win, XWindowAttributes *attr)
+{
+        client_t *c = make_client(win, attr);
+
+        XSelectInput(DPY, c->win, CLIENTMASK);
+        XMapWindow(DPY, c->win);
+
+        return focus(c), c;
 }
 
 /**********************************************************************/
@@ -117,9 +488,6 @@ static void update_numlockmask()
 {
         g_numlockmask = numlockmask();
 }
-
-static void grab_keys(Window win);
-static void grab_buttons(Window win, int focus);
 
 /**********************************************************************/
 
@@ -164,7 +532,7 @@ static int spawn(char **args)
 
 static int spawn_terminal()
 {
-        return spawn((char **)termcmd);
+        return spawn((char **)config_termcmd());
 }
 
 static int toggle_bar()
@@ -232,6 +600,16 @@ static int quit()
         return g_running = 0;
 }
 
+static int move_window()
+{
+        return 0;
+}
+
+static int resize_window()
+{
+        return 0;
+}
+
 /**********************************************************************/
 
 typedef struct keycmd {
@@ -259,6 +637,18 @@ static keycmd_t g_keycmds[] = {
         { MODKEY | ShiftMask,   XK_q,       quit               }
         /* clang-format on */
 };
+
+typedef struct ptrcmd {
+        unsigned mod, button;
+        int (*fun)();
+} ptrcmd_t;
+
+static ptrcmd_t g_ptrcmds[] = {
+        { MODKEY, Button1, move_window },
+        { MODKEY, Button3, resize_window }
+};
+
+/**********************************************************************/
 
 static int do_key_press_handler(KeySym keysym, unsigned mod)
 {
@@ -315,7 +705,20 @@ static int unmap_notify_handler(XEvent *arg)
 
 static int map_request_handler(XEvent *arg)
 {
-        UNUSED(arg);
+        client_t *c;
+
+        XMapRequestEvent *ev = &arg->xmaprequest;
+        XWindowAttributes attr;
+
+        if (!XGetWindowAttributes(DPY, ev->window, &attr) ||
+            attr.override_redirect)
+                return 0;
+
+        if (!is_managed(ev->window) && (c = manage(ev->window, &attr))) {
+                XMapWindow(DPY, c->win);
+                /* TODO: focus, etc. */
+        }
+
         return 0;
 }
 
@@ -379,20 +782,65 @@ static void grab_keys(Window win)
 
         update_numlockmask();
 
+        /*
+         * Un(passive)grab all keys for this client:
+         */
         XUngrabKey(DPY, AnyKey, AnyModifier, win);
 
-#define GRABKEYS(x)                                                            \
-        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1, GrabModeAsync,    \
-                 GrabModeAsync)
+/* clang-format off */
+#define GRABKEYS(x)                                             \
+        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1,    \
+                 GrabModeAsync, GrabModeAsync)
+/* clang-format on */
 
         for (i = 0; i < SIZEOF(g_keycmds); ++i)
                 if ((keycode = XKeysymToKeycode(DPY, g_keycmds[i].keysym))) {
+                        /*
+                         * (Passive) grab all combos in the map:
+                         */
                         GRABKEYS(0);
                         GRABKEYS(LockMask);
                         GRABKEYS(g_numlockmask);
                         GRABKEYS(g_numlockmask | LockMask);
                 }
 #undef GRABKEYS
+}
+
+static void grab_buttons(Window win, int focus)
+{
+        size_t i;
+
+        update_numlockmask();
+
+        /*
+         * Un(passive)grab all buttons for this client:
+         */
+        XUngrabButton(DPY, AnyButton, AnyModifier, win);
+
+        if (!focus)
+                /*
+                 * Button `passthrough' if client is not in focus:
+                 */
+                XGrabButton(DPY,
+                            AnyButton, AnyModifier,
+                            win, 0, BUTTONMASK,
+                            GrabModeAsync, GrabModeAsync,
+                            None, None);
+
+#define GRABBUTTONS(x)                                  \
+        XGrabButton(DPY,                                \
+                    g_ptrcmds[i].button,                \
+                    g_ptrcmds[i].mod | x,               \
+                    win, 0, BUTTONMASK,                 \
+                    GrabModeAsync, GrabModeAsync,       \
+                    None, None)
+
+        for (i = 0; i < SIZEOF(g_ptrcmds); i++) {
+                GRABBUTTONS(0);
+                GRABBUTTONS(LockMask);
+                GRABBUTTONS(g_numlockmask);
+                GRABBUTTONS(g_numlockmask | LockMask);
+        }
 }
 
 /**********************************************************************/
@@ -440,14 +888,20 @@ static void init_atoms()
 
 static void init_colors()
 {
-        make_colors(colors, SIZEOF(colors));
+        make_colors(config_colors(), config_colors_size());
         atexit(free_colors);
 }
 
 static void init_cursors()
 {
-        make_cursors(cursors, SIZEOF(cursors));
+        make_cursors(config_cursors(), config_cursors_size());
         atexit(free_cursors);
+}
+
+static void init_screens()
+{
+        make_screens();
+        atexit(free_screens);
 }
 
 static void init()
@@ -458,9 +912,11 @@ static void init()
         init_atoms();
         init_colors();
         init_cursors();
-        init_error_handling();
 
         setup_root();
+        init_error_handling();
+
+        init_screens();
 }
 
 static void run()
