@@ -11,6 +11,8 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
+Window transient_for_property(Window win);
+
 int is_transient(Window win);
 int is_urgent(Window win);
 int is_noinput(Window win);
@@ -37,6 +39,8 @@ int has_override_redirect(Window win);
 
 void reset_fullscreen_property(Window win);
 void set_fullscreen_property(Window win);
+
+void set_default_window_border(Window win);
 
 int send(Window, Atom);
 

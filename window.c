@@ -2,8 +2,21 @@
 
 #include <window.h>
 #include <atom.h>
+#include <color.h>
+#include <config.h>
 #include <error.h>
 #include <xlib.h>
+
+Window transient_for_property(Window win)
+{
+        Window other;
+
+        if (!XGetTransientForHint(DPY, win, &other)) {
+                other = 0;
+        }
+
+        return other;
+}
 
 int is_transient(Window win)
 {
@@ -172,6 +185,24 @@ void set_fullscreen_property(Window win)
         Atom prop = NET_WM_STATE_FULLSCREEN;
         XChangeProperty(DPY, win, NET_WM_STATE, XA_ATOM, 32, PropModeReplace,
                         (unsigned char *)&prop, 1);
+}
+
+static void set_default_window_border_width(Window win)
+{
+        XWindowChanges wc;
+        wc.border_width = config_border_width();
+        XConfigureWindow(DPY, win, CWBorderWidth, &wc);
+}
+
+static void set_default_window_border_color(Window win)
+{
+        XSetWindowBorder(DPY, win, NORMAL_BORDER);
+}
+
+void set_default_window_border(Window win)
+{
+        set_default_window_border_width(win);
+        set_default_window_border_color(win);
 }
 
 static int do_send(Window win, Atom proto)
