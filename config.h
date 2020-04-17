@@ -8,11 +8,19 @@
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 
-static const char *colors[] = { "#444444", "#222222", "#BBBBBB",
-                                "#93a660", "#334600", "#EEEEEE" };
+const char **config_colors();
+size_t config_colors_size();
 
-static const int cursors[] = { XC_top_left_arrow, XC_sizing, XC_fleur };
+const int *config_cursors();
+size_t config_cursors_size();
 
-static const char *termcmd[] = { "st", "-f", "Fira Code Retina:size=10", 0 };
+const char **config_termcmd();
+
+int config_showbar();
+int config_border_width();
+int config_bar_height();
+
+int config_master_size();
+float config_master_ratio();
 
 #endif /* WM_CONFIG_H */
