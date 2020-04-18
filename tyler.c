@@ -113,6 +113,8 @@ static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
 /**********************************************************************/
 
+#if defined (XINERAMA)
+
 static int
 xi_greater_x_then_y(const xi_t **a, const xi_t **b)
 {
@@ -213,6 +215,8 @@ static rect_t *get_xinerama_screen_geometries(rect_t *buf, size_t *buflen)
         return 0;
 }
 
+#endif /* XINERAMA */
+
 static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
 {
 #if defined (XINERAMA)
@@ -257,34 +261,6 @@ static screen_t *make_screen(int i, rect_t *r)
         s->next = 0;
 
         return s;
-}
-
-static void make_screens()
-{
-        screen_t **pptr = &screen_head;
-
-        rect_t buf[16], *pbuf = buf;
-        size_t i, n = SIZEOF(buf);
-
-        pbuf = get_all_screens_geometries(buf, &n);
-        ASSERT(pbuf);
-
-        for (i = 0; i < n; ++i) {
-                *pptr = make_screen(i, pbuf + i);
-                pptr = &(*pptr)->next;
-        }
-
-        if (pbuf != buf)
-                free(pbuf);
-
-        ASSERT(screen_head);
-        current_screen = screen_head;
-}
-
-static void free_screens()
-{
-        screen_t *p = screen_head, *pnext;
-        for (screen_head = 0; p; pnext = p->next, free(p), p = pnext) ;
 }
 
 /**********************************************************************/
@@ -439,15 +415,112 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
 static void grab_keys(Window win);
 static void grab_buttons(Window win, int focus);
 
-static int focus(client_t *c)
+static void attach(client_t *c)
 {
-        UNUSED(c);
+        screen_t *s = c->screen;
+        ASSERT(s);
 
-        XRaiseWindow(DPY, c->win);
+        c->next = s->client_head;
+        s->client_head = c;
+}
+
+static void attach_to_stack(client_t *c)
+{
+        screen_t *s = c->screen;
+        ASSERT(s);
+
+        c->focus_next = s->focus_head;
+        s->focus_head = c;
+}
+
+static void detach(client_t *c)
+{
+        client_t **pptr;
+
+        ASSERT(c->screen);
+
+        pptr = &c->screen->client_head;
+        for (; *pptr && *pptr != c; pptr = &(*pptr)->next) ;
+
+        if (*pptr == c)
+                *pptr = c->next;
+
+        c->next = 0;
+}
+
+static void detach_from_stack(client_t *c)
+{
+        client_t **pptr;
+
+        ASSERT(c->screen);
+
+        pptr = &c->screen->focus_head;
+        for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next) ;
+
+        if (*pptr == c)
+                *pptr = c->focus_next;
+
+        c->focus_next = 0;
+}
+
+static void set_client_focus(client_t *c)
+{
+        state_t *state = &c->state[c->current_state];
+
+        if (!state->noinput)
+                set_focus(c->win);
+
+        send_focus(c->win);
+}
+
+static void focus_client(client_t *c)
+{
+        client_t *current;
+        screen_t *s;
+
+        ASSERT(c);
+        ASSERT(c->screen);
+
+        s = c->screen;
+        current = s->focus_head;
+
+        if (current) {
+                if (c != current) {
+                        detach_from_stack(c);
+                        attach_to_stack(c);
+                        set_default_window_border(current->win);
+                }
+        }
+
+        set_select_window_border(c->win);
+        set_client_focus(c);
+
         grab_buttons(c->win, 1);
-        ASSERT(0);
+}
 
-        return 0;
+static void focus_screen(screen_t *s)
+{
+        ASSERT(s);
+
+        /* TODO: reset focus decorations? */
+        if (s->focus_head)
+                focus_client(s->focus_head);
+}
+
+static void unmanage(client_t* c)
+{
+        screen_t* s = c->screen;
+        ASSERT(s);
+
+        XUngrabButton(DPY, AnyButton, AnyModifier, c->win);
+
+        detach(c);
+        detach_from_stack(c);
+
+        /* TODO: cleanup window state? */
+        free(c);
+
+        focus_screen(s);
 }
 
 static client_t *manage(Window win, XWindowAttributes *attr)
@@ -457,7 +530,41 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
 
-        return focus(c), c;
+        focus_client(c);
+
+        return c;
+}
+
+/**********************************************************************/
+
+static void make_screens()
+{
+        screen_t **pptr = &screen_head;
+
+        rect_t buf[16], *pbuf = buf;
+        size_t i, n = SIZEOF(buf);
+
+        pbuf = get_all_screens_geometries(buf, &n);
+        ASSERT(pbuf);
+
+        for (i = 0; i < n; ++i) {
+                *pptr = make_screen(i, pbuf + i);
+                pptr = &(*pptr)->next;
+        }
+
+        if (pbuf != buf)
+                free(pbuf);
+
+        ASSERT(screen_head);
+        current_screen = screen_head;
+}
+
+static void free_screens()
+{
+        screen_t *s = screen_head, *snext;
+
+        for (; s; snext = s->next, free(s), s = snext)
+                for (; s->client_head; unmanage(s->client_head)) ;
 }
 
 /**********************************************************************/
