@@ -73,6 +73,15 @@ long wm_state(Window win)
         return result;
 }
 
+void set_wm_state(Window win, long state)
+{
+    long arr[] = { 0, None };
+
+    arr[0] = state;
+    XChangeProperty(DPY, win, WM_STATE, WM_STATE, 32, PropModeReplace,
+                    (unsigned char *)arr, 2);
+}
+
 int is_iconic(Window win)
 {
         return IconicState == wm_state(win);
@@ -203,6 +212,17 @@ void set_default_window_border(Window win)
 {
         set_default_window_border_width(win);
         set_default_window_border_color(win);
+}
+
+static void set_select_window_border_color(Window win)
+{
+        XSetWindowBorder(DPY, win, SELECT_BORDER);
+}
+
+void set_select_window_border(Window win)
+{
+        set_default_window_border_width(win);
+        set_select_window_border_color(win);
 }
 
 static int do_send(Window win, Atom proto)

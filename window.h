@@ -18,7 +18,8 @@ int is_urgent(Window win);
 int is_noinput(Window win);
 int is_fullscreen(Window win);
 
-long wm_state(Window);
+long wm_state(Window win);
+void set_wm_state(Window win, long state);
 
 int is_iconic(Window win);
 int is_viewable(Window win);
@@ -41,6 +42,7 @@ void reset_fullscreen_property(Window win);
 void set_fullscreen_property(Window win);
 
 void set_default_window_border(Window win);
+void set_select_window_border(Window win);
 
 int send(Window, Atom);
 
