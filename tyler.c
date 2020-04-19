@@ -49,7 +49,8 @@
 #define CLIENTMASK (0                           \
         | EnterWindowMask                       \
         | FocusChangeMask                       \
-        | PropertyChangeMask)
+        | PropertyChangeMask                    \
+        | 0/* StructureNotifyMask */)
 /* clang-format on */
 
 #if defined(XINERAMA)
@@ -110,6 +111,133 @@ struct screen {
 };
 
 static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
+
+/**********************************************************************/
+
+static int
+is_ffft(client_t *c)
+{
+        state_t *state = &c->state[c->current_state];
+        return !!(0
+                  | state->fixed
+                  | state->floating
+                  | state->transient
+                  | state->fullscreen);
+}
+
+static int
+is_tile(client_t *c)
+{
+        return !is_ffft(c);
+}
+
+static int
+is_visible(client_t *c)
+{
+        return !!(c->state[c->current_state].tags & c->screen->tags);
+}
+
+static int
+is_visible_tile(client_t *c)
+{
+        return is_visible(c) && is_tile(c);
+}
+
+static void
+get_tiles_geometries(rect_t *r, size_t size, float ratio,
+                     rect_t *rs, size_t n)
+{
+        int x, y, w, h, left, dist;
+
+        UNUSED(size);
+
+        switch(n) {
+        case 1:
+                memcpy(rs, r, sizeof *r);
+        case 0:
+                break;
+
+        default:
+                x = r->x;
+                y = r->y;
+                w = r->w;
+                h = r->h;
+
+                left = (int)(w * ratio);
+
+                rs[0].x = x;
+                rs[0].y = y;
+                rs[0].w = left;
+                rs[0].h = h;
+
+                ++rs;
+
+                x += left;
+                w -= left;
+
+                --n;
+                ASSERT(0 < n && n < (size_t)h);
+
+                for (dist = 0; 0 < h; y += dist, h -= dist, ++rs) {
+                        dist = (double)h / n--;
+                        rs[0].x = x;
+                        rs[0].y = y;
+                        rs[0].w = w;
+                        rs[0].h = dist;
+                }
+                break;
+        }
+}
+
+static size_t visible_clients_count(screen_t *s)
+{
+        client_t *c;
+        size_t n;
+
+        for (n = 0, c = s->client_head; c; c = c->next)
+                if (is_visible(c)) ++n;
+
+        return n;
+}
+
+static size_t visible_tiles_count(screen_t *s)
+{
+        client_t *c;
+        size_t n;
+
+        for (n = 0, c = s->client_head; c; c = c->next)
+                if (is_visible_tile(c)) ++n;
+
+        return n;
+}
+
+static void
+tile(screen_t *s)
+{
+        rect_t buf[64], *pbuf = buf, *r;
+
+        client_t *c;
+        size_t n;
+
+        for (n = 0, c = s->client_head; c; c = c->next)
+                if (is_visible_tile(c)) ++n;
+
+        if (n > SIZEOF(buf)) {
+                pbuf = malloc(n * sizeof *pbuf);
+        }
+
+        get_tiles_geometries(&s->r, s->master_size, s->master_ratio, pbuf, n);
+        r = pbuf;
+
+        for (c = s->client_head; c; c = c->next)
+                if (is_visible_tile(c)) {
+                        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
+                        ++r;
+                }
+
+        if (pbuf != buf)
+                free(pbuf);
+}
 
 /**********************************************************************/
 
@@ -509,28 +637,40 @@ static void focus_screen(screen_t *s)
 
 static void unmanage(client_t* c)
 {
-        screen_t* s = c->screen;
-        ASSERT(s);
+        ASSERT(c);
+        ASSERT(c->screen);
 
         XUngrabButton(DPY, AnyButton, AnyModifier, c->win);
 
         detach(c);
         detach_from_stack(c);
 
+        if (is_tile(c))
+                tile(c->screen);
+
         /* TODO: cleanup window state? */
         free(c);
 
-        focus_screen(s);
+        if (current_screen == c->screen)
+                focus_screen(c->screen);
 }
 
 static client_t *manage(Window win, XWindowAttributes *attr)
 {
         client_t *c = make_client(win, attr);
+        ASSERT(c->screen);
+
+        attach(c);
+        attach_to_stack(c);
 
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
 
-        focus_client(c);
+        if (is_tile(c))
+                tile(c->screen);
+
+        if (current_screen == c->screen)
+                focus_client(c);
 
         return c;
 }
@@ -800,14 +940,12 @@ static int focus_in_handler(XEvent *arg)
 
 static int destroy_notify_handler(XEvent *arg)
 {
-        UNUSED(arg);
-        return 0;
+        return unmanage(client_of(arg->xdestroywindow.window)), 0;
 }
 
 static int unmap_notify_handler(XEvent *arg)
 {
-        UNUSED(arg);
-        return 0;
+        return unmanage(client_of(arg->xunmap.window)), 0;
 }
 
 static int map_request_handler(XEvent *arg)
@@ -852,24 +990,24 @@ static int handle_event(XEvent *arg)
         static int (*fun[LASTEvent])(XEvent *) = {
                 /* clang-format off */
                 0, 0,
-                key_press_handler,
+                key_press_handler, /* 2 */
                 0,
-                button_press_handler,
+                button_press_handler, /* 4 */
                 0, 0,
-                enter_notify_handler,
+                enter_notify_handler, /* 7 */
                 0,
-                focus_in_handler,
+                focus_in_handler, /* 9 */
                 0, 0, 0, 0, 0, 0, 0,
-                destroy_notify_handler,
-                unmap_notify_handler,
+                destroy_notify_handler, /* 17 */
+                unmap_notify_handler,  /* 18 */
                 0,
-                map_request_handler,
+                map_request_handler, /* 20 */
                 0, 0,
-                configure_request_handler,
+                configure_request_handler, /* 23 */
                 0, 0, 0, 0,
-                property_notify_handler,
+                property_notify_handler, /* 28 */
                 0, 0, 0, 0,
-                client_message_handler,
+                client_message_handler, /* 33 */
                 0
                 /* clang-format on */
         };
