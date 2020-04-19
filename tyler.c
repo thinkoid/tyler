@@ -640,8 +640,6 @@ static void unmanage(client_t* c)
         ASSERT(c);
         ASSERT(c->screen);
 
-        XUngrabButton(DPY, AnyButton, AnyModifier, c->win);
-
         detach(c);
         detach_from_stack(c);
 
@@ -940,12 +938,22 @@ static int focus_in_handler(XEvent *arg)
 
 static int destroy_notify_handler(XEvent *arg)
 {
-        return unmanage(client_of(arg->xdestroywindow.window)), 0;
+        client_t *c;
+
+        if ((c = client_of(arg->xdestroywindow.window)))
+                unmanage(c);
+
+        return 0;
 }
 
 static int unmap_notify_handler(XEvent *arg)
 {
-        return unmanage(client_of(arg->xunmap.window)), 0;
+        client_t *c;
+
+        if ((c = client_of(arg->xunmap.window)))
+                unmanage(c);
+
+        return 0;
 }
 
 static int map_request_handler(XEvent *arg)
@@ -1092,8 +1100,8 @@ static void grab_buttons(Window win, int focus)
 
 static void setup_root_supported_atoms()
 {
-        Atom *p = atoms();
-        size_t n = atoms_size();
+        Atom *p = netatoms();
+        size_t n = netatoms_size();
 
         XChangeProperty(DPY, ROOT, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace,
                         (unsigned char *)p, n);
@@ -1158,8 +1166,8 @@ static void init()
         init_colors();
         init_cursors();
 
-        setup_root();
         init_error_handling();
+        setup_root();
 
         init_screens();
 }
