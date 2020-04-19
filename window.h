@@ -50,4 +50,7 @@ void zap_window(Window win);
 
 Window *all_windows();
 
+void pause_propagate(Window win, long mask);
+void resume_propagate(Window win, long mask);
+
 #endif /* WM_WINDOW_H */

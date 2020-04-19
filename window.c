@@ -270,3 +270,17 @@ Window *all_windows()
 
         return pbuf;
 }
+
+void pause_propagate(Window win, long mask)
+{
+        XSetWindowAttributes attr = { 0 };
+        attr.do_not_propagate_mask = mask;
+        XChangeWindowAttributes(DPY, win, CWEventMask, &attr);
+}
+
+void resume_propagate(Window win, long mask)
+{
+        XSetWindowAttributes attr = { 0 };
+        attr.event_mask = mask;
+        XChangeWindowAttributes(DPY, win, CWEventMask, &attr);
+}
