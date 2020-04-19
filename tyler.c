@@ -603,21 +603,22 @@ static void set_client_focus(client_t *c)
 
 static void focus_client(client_t *c)
 {
-        client_t *current;
+        client_t *current_focus;
         screen_t *s;
 
         ASSERT(c);
         ASSERT(c->screen);
 
-        s = c->screen;
-        current = s->focus_head;
+        if (current_screen != (s = c->screen))
+                return;
 
-        if (current) {
-                if (c != current) {
-                        detach_from_stack(c);
-                        attach_to_stack(c);
-                        set_default_window_border(current->win);
-                }
+        current_focus = s->focus_head;
+        ASSERT(current_focus);
+
+        if (c != current_focus) {
+                set_default_window_border(current_focus->win);
+                detach_from_stack(c);
+                attach_to_stack(c);
         }
 
         set_select_window_border(c->win);
@@ -628,11 +629,21 @@ static void focus_client(client_t *c)
 
 static void focus_screen(screen_t *s)
 {
-        ASSERT(s);
+        if (0 == s)
+                s = current_screen;
 
-        /* TODO: reset focus decorations? */
-        if (s->focus_head)
+        if (s == current_screen && s->focus_head)
+                /*
+                 * Focus the focus stack head on current screen:
+                 */
                 focus_client(s->focus_head);
+}
+
+static void unfocus_screen(screen_t *s)
+{
+        ASSERT(s);
+        set_default_window_border(s->focus_head->win);
+        reset_focus();
 }
 
 static void unmanage(client_t* c)
