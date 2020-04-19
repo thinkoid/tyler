@@ -11,7 +11,10 @@ enum atom_sym {
         ATOM_WM_PROTOCOLS,
         ATOM_WM_DELETE_WINDOW,
         ATOM_WM_STATE,
-        ATOM_WM_TAKE_FOCUS,
+        ATOM_WM_TAKE_FOCUS
+};
+
+enum netatom_sym {
         ATOM_NET_ACTIVE_WINDOW,
         ATOM_NET_SUPPORTED,
         ATOM_NET_WM_STATE,
@@ -20,19 +23,22 @@ enum atom_sym {
 
 void make_atoms();
 
-Atom atom(enum atom_sym sym);
+Atom    atom(enum atom_sym sym);
+Atom netatom(enum netatom_sym sym);
 
-Atom *atoms();
-size_t atoms_size();
+Atom  *netatoms();
+size_t netatoms_size();
 
-#define WM_PROTOCOLS (atom(ATOM_WM_PROTOCOLS))
-#define WM_DELETE_WINDOW (atom(ATOM_WM_DELETE_WINDOW))
-#define WM_STATE (atom(ATOM_WM_STATE))
-#define WM_TAKE_FOCUS (atom(ATOM_WM_TAKE_FOCUS))
-#define NET_ACTIVE_WINDOW (atom(ATOM_NET_ACTIVE_WINDOW))
-#define NET_SUPPORTED (atom(ATOM_NET_SUPPORTED))
-#define NET_WM_STATE (atom(ATOM_NET_WM_STATE))
-#define NET_WM_STATE_FULLSCREEN (atom(ATOM_NET_WM_STATE_FULLSCREEN))
+/* clang-format off */
+#define WM_PROTOCOLS            (atom(ATOM_WM_PROTOCOLS))
+#define WM_DELETE_WINDOW        (atom(ATOM_WM_DELETE_WINDOW))
+#define WM_STATE                (atom(ATOM_WM_STATE))
+#define WM_TAKE_FOCUS           (atom(ATOM_WM_TAKE_FOCUS))
+#define NET_ACTIVE_WINDOW       (netatom(ATOM_NET_ACTIVE_WINDOW))
+#define NET_SUPPORTED           (netatom(ATOM_NET_SUPPORTED))
+#define NET_WM_STATE            (netatom(ATOM_NET_WM_STATE))
+#define NET_WM_STATE_FULLSCREEN (netatom(ATOM_NET_WM_STATE_FULLSCREEN))
+/* clang-format on */
 
 Atom atomic_property(Window win, Atom prop);
 const char *atom_name(Atom prop, char *buf, size_t len);

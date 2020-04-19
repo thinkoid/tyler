@@ -1,4 +1,4 @@
-/* -*- mode: c++ -*- */
+/* -*- mode: c; -*- */
 
 #include <atom.h>
 #include <display.h>
@@ -8,18 +8,22 @@
 
 #include <X11/Xatom.h>
 
-static Atom g_atoms[8];
+static Atom g_atoms[4];
+static Atom g_netatoms[4];
 
 void make_atoms()
 {
-        size_t i;
-
         static const char *names[] = {
                 /* clang-format off */
                 "WM_PROTOCOLS",
                 "WM_DELETE_WINDOW",
                 "WM_STATE",
-                "WM_TAKE_FOCUS",
+                "WM_TAKE_FOCUS"
+                /* clang-format on */
+        };
+
+        static const char *netnames[] = {
+                /* clang-format off */
                 "_NET_ACTIVE_WINDOW",
                 "_NET_SUPPORTED",
                 "_NET_WM_STATE",
@@ -27,10 +31,16 @@ void make_atoms()
                 /* clang-format on */
         };
 
-        ASSERT(SIZEOF(g_atoms) == SIZEOF(names));
+        size_t i;
+
+        ASSERT(SIZEOF(g_atoms)    == SIZEOF(names));
+        ASSERT(SIZEOF(g_netatoms) == SIZEOF(netnames));
 
         for (i = 0; i < SIZEOF(g_atoms); ++i)
                 g_atoms[i] = XInternAtom(DPY, names[i], 0);
+
+        for (i = 0; i < SIZEOF(g_netatoms); ++i)
+                g_netatoms[i] = XInternAtom(DPY, netnames[i], 0);
 }
 
 Atom atom(enum atom_sym sym)
@@ -39,14 +49,20 @@ Atom atom(enum atom_sym sym)
         return g_atoms[sym];
 }
 
-Atom *atoms()
+Atom netatom(enum netatom_sym sym)
 {
-        return g_atoms;
+        ASSERT(0 <= sym && sym <= SIZEOF(g_netatoms));
+        return g_netatoms[sym];
 }
 
-size_t atoms_size()
+Atom *netatoms()
 {
-        return SIZEOF(g_atoms);
+        return g_netatoms;
+}
+
+size_t netatoms_size()
+{
+        return SIZEOF(g_netatoms);
 }
 
 Atom atomic_property(Window win, Atom prop)
@@ -57,8 +73,7 @@ Atom atomic_property(Window win, Atom prop)
         unsigned char *p;
 
         if (XGetWindowProperty(DPY, win, prop, 0L, sizeof(Atom), 0, XA_ATOM, &a,
-                               &i, &l, &l, &p) &&
-            p) {
+                               &i, &l, &l, &p) && p) {
                 result = *(Atom *)p;
                 XFree(p);
         }
