@@ -214,7 +214,7 @@ static size_t visible_tiles_count(screen_t *s)
 static void
 tile(screen_t *s)
 {
-        rect_t buf[64], *pbuf = buf, *r;
+        rect_t rs[64], *prs = rs, *r;
 
         client_t *c;
         size_t n;
@@ -222,12 +222,12 @@ tile(screen_t *s)
         for (n = 0, c = s->client_head; c; c = c->next)
                 if (is_visible_tile(c)) ++n;
 
-        if (n > SIZEOF(buf)) {
-                pbuf = malloc(n * sizeof *pbuf);
+        if (n > SIZEOF(rs)) {
+                prs = malloc(n * sizeof *prs);
         }
 
-        get_tiles_geometries(&s->r, s->master_size, s->master_ratio, pbuf, n);
-        r = pbuf;
+        get_tiles_geometries(&s->r, s->master_size, s->master_ratio, prs, n);
+        r = prs;
 
         for (c = s->client_head; c; c = c->next)
                 if (is_visible_tile(c)) {
@@ -235,8 +235,8 @@ tile(screen_t *s)
                         ++r;
                 }
 
-        if (pbuf != buf)
-                free(pbuf);
+        if (prs != rs)
+                free(prs);
 }
 
 /**********************************************************************/
@@ -277,18 +277,18 @@ unique_xinerama_geometries(xi_t ***pptr, xi_t **pend)
         ++*pptr;
 }
 
-static rect_t *get_xinerama_screen_geometries(rect_t *buf, size_t *buflen)
+static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
 {
         qsort_cmp_t by_x_then_y      = (qsort_cmp_t)xi_greater_x_then_y;
         qsort_cmp_t by_screen_number = (qsort_cmp_t)xi_greater_screen_number;
 
-        rect_t *pbuf = buf, *dst;
+        rect_t *prs = rs, *dst;
         int i, n;
 
         xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis, *src;
 
-        ASSERT(buf);
-        ASSERT(buflen);
+        ASSERT(rs);
+        ASSERT(len);
 
         if ((xis = XineramaQueryScreens(DPY, &n))) {
                 ASSERT (n > 0);
@@ -316,15 +316,15 @@ static rect_t *get_xinerama_screen_geometries(rect_t *buf, size_t *buflen)
                  */
                 qsort(ppxis, n, sizeof *ppxis, by_screen_number);
 
-                if ((size_t)n > *buflen) {
-                        pbuf = malloc(n * sizeof *pbuf);
+                if ((size_t)n > *len) {
+                        prs = malloc(n * sizeof *prs);
                 }
 
-                *buflen = n;
+                *len = n;
 
                 for (i = 0; i < n; ++i, ++src, ++dst) {
                         src = ppxis[i];
-                        dst = pbuf;
+                        dst = prs;
 
                         dst->x = src->x_org;
                         dst->y = src->y_org;
@@ -337,7 +337,7 @@ static rect_t *get_xinerama_screen_geometries(rect_t *buf, size_t *buflen)
                 if (ppxis != pxis)
                         free(ppxis);
 
-                return pbuf;
+                return prs;
         }
 
         return 0;
@@ -741,19 +741,19 @@ static void make_screens()
 {
         screen_t **pptr = &screen_head;
 
-        rect_t buf[16], *pbuf = buf;
-        size_t i, n = SIZEOF(buf);
+        rect_t rs[16], *prs = rs;
+        size_t i, n = SIZEOF(rs);
 
-        pbuf = get_all_screens_geometries(buf, &n);
-        ASSERT(pbuf);
+        prs = get_all_screens_geometries(rs, &n);
+        ASSERT(prs);
 
         for (i = 0; i < n; ++i) {
-                *pptr = make_screen(i, pbuf + i);
+                *pptr = make_screen(i, prs + i);
                 pptr = &(*pptr)->next;
         }
 
-        if (pbuf != buf)
-                free(pbuf);
+        if (prs != rs)
+                free(prs);
 
         ASSERT(screen_head);
         current_screen = screen_head;
@@ -850,7 +850,7 @@ static int toggle_bar()
 static int move_focus_left()
 {
         screen_t *s;
-        client_t *c, *cur, *last;
+        client_t *c, *cur;
 
         ASSERT(current_screen);
         s = current_screen;
