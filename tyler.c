@@ -1026,7 +1026,7 @@ static int enter_notify_handler(XEvent *arg)
         if (ev->mode != NotifyNormal && ev->detail == NotifyInferior)
                 return 0;
 
-        if (0 == (c = client_of(ev->window)) || c == c->screen->focus_head)
+        if (0 == (c = client_of(ev->window)) || c == c->screen->current_client)
                 return 0;
 
         focus(c);
@@ -1039,7 +1039,7 @@ static int focus_in_handler(XEvent *arg)
         client_t *c;
 
         ASSERT(current_screen);
-        c = current_screen->focus_head;
+        c = current_screen->current_client;
 
         if (c && c->win != arg->xfocus.window)
                 focus(c);
