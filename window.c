@@ -75,11 +75,11 @@ long wm_state(Window win)
 
 void set_wm_state(Window win, long state)
 {
-    long arr[] = { 0, None };
+        long arr[] = { 0, None };
 
-    arr[0] = state;
-    XChangeProperty(DPY, win, WM_STATE, WM_STATE, 32, PropModeReplace,
-                    (unsigned char *)arr, 2);
+        arr[0] = state;
+        XChangeProperty(DPY, win, WM_STATE, WM_STATE, 32, PropModeReplace,
+                        (unsigned char *)arr, 2);
 }
 
 int is_iconic(Window win)
@@ -102,10 +102,10 @@ Window focused_window()
         unsigned long nitems, unused_bytes_after;
         unsigned char *prop;
 
-        int status = XGetWindowProperty(DPY, ROOT, NET_ACTIVE_WINDOW, 0, (~0L),
-                                        0, AnyPropertyType, &unused_type,
-                                        &unused_format, &nitems,
-                                        &unused_bytes_after, &prop);
+        int status =
+                XGetWindowProperty(DPY, ROOT, NET_ACTIVE_WINDOW, 0, (~0L), 0,
+                                   AnyPropertyType, &unused_type, &unused_format,
+                                   &nitems, &unused_bytes_after, &prop);
 
         return Success == status && 0 < nitems ? *(Window *)prop : 0;
 }

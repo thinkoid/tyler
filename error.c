@@ -44,8 +44,7 @@ static int default_error_handler(Display *dpy, XErrorEvent *ee)
             (REQ(ee) == X_CopyArea && ERR(ee) == BadDrawable))
                 return 0;
 
-        fprintf(stderr,
-                "window manager fatal error : request = %d, error = %d\n",
+        fprintf(stderr, "window manager fatal error : request = %d, error = %d\n",
                 REQ(ee), REQ(ee));
 
 #undef REQ
@@ -62,8 +61,7 @@ static int error_handler_dispatch(Display *dpy, XErrorEvent *ee)
         ASSERT(other_error_handler);
         ASSERT(error_handler);
 
-        if ((error_handler && 0 == error_handler(dpy, ee)) ||
-            other_error_handler)
+        if ((error_handler && 0 == error_handler(dpy, ee)) || other_error_handler)
                 return other_error_handler(dpy, ee);
 
         return 0;

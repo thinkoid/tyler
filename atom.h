@@ -23,10 +23,10 @@ enum netatom_sym {
 
 void make_atoms();
 
-Atom    atom(enum atom_sym sym);
+Atom atom(enum atom_sym sym);
 Atom netatom(enum netatom_sym sym);
 
-Atom  *netatoms();
+Atom *netatoms();
 size_t netatoms_size();
 
 /* clang-format off */

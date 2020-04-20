@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-void fill_size_hints_defaults(XSizeHints *hints) {
+void fill_size_hints_defaults(XSizeHints *hints)
+{
         /*
         * ICCCM 4.1.2.3:
         * The min_width and min_height elements specify the minimum size that
@@ -30,12 +31,12 @@ void fill_size_hints_defaults(XSizeHints *hints) {
                 break;
 
         case PMinSize:
-                hints->base_width  = hints->min_width;
+                hints->base_width = hints->min_width;
                 hints->base_height = hints->min_height;
                 break;
 
         case PBaseSize:
-                hints->min_width  = hints->base_width;
+                hints->min_width = hints->base_width;
                 hints->min_height = hints->base_height;
                 break;
 

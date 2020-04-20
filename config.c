@@ -73,4 +73,3 @@ float config_master_ratio()
 {
         return g_master_ratio;
 }
-

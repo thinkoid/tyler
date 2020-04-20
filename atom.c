@@ -33,7 +33,7 @@ void make_atoms()
 
         size_t i;
 
-        ASSERT(SIZEOF(g_atoms)    == SIZEOF(names));
+        ASSERT(SIZEOF(g_atoms) == SIZEOF(names));
         ASSERT(SIZEOF(g_netatoms) == SIZEOF(netnames));
 
         for (i = 0; i < SIZEOF(g_atoms); ++i)
@@ -73,7 +73,8 @@ Atom atomic_property(Window win, Atom prop)
         unsigned char *p;
 
         if (XGetWindowProperty(DPY, win, prop, 0L, sizeof(Atom), 0, XA_ATOM, &a,
-                               &i, &l, &l, &p) && p) {
+                               &i, &l, &l, &p) &&
+            p) {
                 result = *(Atom *)p;
                 XFree(p);
         }
