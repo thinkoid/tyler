@@ -18,33 +18,7 @@ Window transient_for_property(Window win)
         return other;
 }
 
-int is_transient(Window win)
-{
-        Window other;
-        return XGetTransientForHint(DPY, win, &other);
-}
-
-int is_urgent(Window win)
-{
-        int result = 0;
-
-        XWMHints *p = wm_hints(win);
-        result = p && (p->flags & XUrgencyHint);
-
-        return XFree(p), result;
-}
-
-int is_noinput(Window win)
-{
-        int result = 0;
-
-        XWMHints *p = wm_hints(win);
-        result = p && (p->flags & InputHint) && !p->input;
-
-        return XFree(p), result;
-}
-
-int is_fullscreen(Window win)
+int has_fullscreen_property(Window win)
 {
         return NET_WM_STATE_FULLSCREEN == atomic_property(win, NET_WM_STATE);
 }

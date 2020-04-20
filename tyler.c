@@ -124,6 +124,11 @@ static int is_ffft(client_t *c)
                   | state->fullscreen);
 }
 
+static int is_fullscreen(client_t *c)
+{
+        return c->state[c->current_state].fullscreen;
+}
+
 static int is_tile(client_t *c)
 {
         return !is_ffft(c);
@@ -524,7 +529,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
         update_client_size_hints(c);
         update_client_wm_hints(c);
 
-        state->fullscreen = is_fullscreen(c->win);
+        state->fullscreen = has_fullscreen_property(c->win);
         state->floating = state->transient || state->fixed;
 
         return c;

@@ -13,10 +13,7 @@
 
 Window transient_for_property(Window win);
 
-int is_transient(Window win);
-int is_urgent(Window win);
-int is_noinput(Window win);
-int is_fullscreen(Window win);
+int has_fullscreen_property(Window win);
 
 long wm_state(Window win);
 void set_wm_state(Window win, long state);
