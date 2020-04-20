@@ -189,7 +189,7 @@ static void get_tiles_geometries(rect_t *r, size_t size, float ratio,
         }
 }
 
-static size_t visible_clients_count(screen_t *s)
+static size_t count_visible_clients(screen_t *s)
 {
         client_t *c;
         size_t n;
@@ -200,7 +200,7 @@ static size_t visible_clients_count(screen_t *s)
         return n;
 }
 
-static size_t visible_tiles_count(screen_t *s)
+static size_t count_visible_tiles(screen_t *s)
 {
         client_t *c;
         size_t n;
@@ -388,7 +388,7 @@ static screen_t *make_screen(int i, rect_t *r)
 
 /**********************************************************************/
 
-static client_t *client_of(Window win)
+static client_t *client_for(Window win)
 {
         client_t *c;
         screen_t *s;
@@ -403,13 +403,13 @@ static client_t *client_of(Window win)
 
 static int is_managed(Window win)
 {
-        return 0 != client_of(win);
+        return 0 != client_for(win);
 }
 
-static client_t *transient_client_of(Window win)
+static client_t *transient_client_for(Window win)
 {
         Window other;
-        return (other = transient_for_property(win)) ? client_of(other) : 0;
+        return (other = transient_for_property(win)) ? client_for(other) : 0;
 }
 
 static void send_client_configuration(const client_t *c)
@@ -517,7 +517,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
          * Transient property and the borrowing of tags from its parent should
          * take place only once, upon initialization:
          */
-        if ((transient = transient_client_of(win))) {
+        if ((transient = transient_client_for(win))) {
                 c->screen = transient->screen;
                 state->tags = transient->state[transient->current_state].tags;
                 state->transient = 1;
@@ -571,6 +571,9 @@ static void stack_push_front(client_t *c)
 
         c->focus_next = s->focus_head;
         s->focus_head = c;
+
+        if (is_visible(c))
+                s->current_client = c;
 }
 
 static void push_back(client_t *c)
@@ -745,9 +748,8 @@ static void focus(client_t *c)
 
         if (s == current_screen) {
                 set_select_window_border(c->win);
-                grab_buttons(c->win, 1);
-
                 set_client_focus(c);
+                grab_buttons(c->win, 1);
         }
 }
 
@@ -1124,7 +1126,7 @@ static int enter_notify_handler(XEvent *arg)
         if (ev->mode != NotifyNormal && ev->detail == NotifyInferior)
                 return 0;
 
-        if (0 == (c = client_of(ev->window)) || c == c->screen->current_client)
+        if (0 == (c = client_for(ev->window)) || c == c->screen->current_client)
                 return 0;
 
         focus(c);
@@ -1152,7 +1154,7 @@ static int destroy_notify_handler(XEvent *arg)
 {
         client_t *c;
 
-        if ((c = client_of(arg->xdestroywindow.window)))
+        if ((c = client_for(arg->xdestroywindow.window)))
                 unmanage(c);
 
         return 0;
@@ -1162,7 +1164,7 @@ static int unmap_notify_handler(XEvent *arg)
 {
         client_t *c;
 
-        if ((c = client_of(arg->xunmap.window)))
+        if ((c = client_for(arg->xunmap.window)))
                 unmanage(c);
 
         return 0;
