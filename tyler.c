@@ -57,15 +57,15 @@
 typedef XineramaScreenInfo xi_t;
 #endif /* XINERAMA */
 
-typedef int(*qsort_cmp_t)(const void *, const void *);
+typedef int (*qsort_cmp_t)(const void *, const void *);
 
 static int g_running = 1;
 static unsigned g_numlockmask /* = 0 */;
 
 typedef struct state {
         geom_t g;
-        unsigned fixed : 1, floating : 1, transient : 1, urgent : 1,
-                noinput : 1, fullscreen : 1;
+        unsigned fixed : 1, floating : 1, transient : 1, urgent : 1, noinput : 1,
+                fullscreen : 1;
         unsigned tags;
 } state_t;
 
@@ -114,8 +114,7 @@ static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
 /**********************************************************************/
 
-static int
-is_ffft(client_t *c)
+static int is_ffft(client_t *c)
 {
         state_t *state = &c->state[c->current_state];
         return !!(0
@@ -125,33 +124,29 @@ is_ffft(client_t *c)
                   | state->fullscreen);
 }
 
-static int
-is_tile(client_t *c)
+static int is_tile(client_t *c)
 {
         return !is_ffft(c);
 }
 
-static int
-is_visible(client_t *c)
+static int is_visible(client_t *c)
 {
         return !!(c->state[c->current_state].tags & c->screen->tags);
 }
 
-static int
-is_visible_tile(client_t *c)
+static int is_visible_tile(client_t *c)
 {
         return is_visible(c) && is_tile(c);
 }
 
-static void
-get_tiles_geometries(rect_t *r, size_t size, float ratio,
-                     rect_t *rs, size_t n)
+static void get_tiles_geometries(rect_t *r, size_t size, float ratio,
+                                 rect_t *rs, size_t n)
 {
         int x, y, w, h, left, dist;
 
         UNUSED(size);
 
-        switch(n) {
+        switch (n) {
         case 1:
                 memcpy(rs, r, sizeof *r);
         case 0:
@@ -211,8 +206,7 @@ static size_t visible_tiles_count(screen_t *s)
         return n;
 }
 
-static void
-tile(screen_t *s)
+static void tile(screen_t *s)
 {
         rect_t rs[64], *prs = rs, *r;
 
@@ -241,31 +235,27 @@ tile(screen_t *s)
 
 /**********************************************************************/
 
-#if defined (XINERAMA)
+#if defined(XINERAMA)
 
-static int
-xi_greater_x_then_y(const xi_t **a, const xi_t **b)
+static int xi_greater_x_then_y(const xi_t **a, const xi_t **b)
 {
         xi_t const *lhs = *a, *rhs = *b;
-        return   lhs->x_org  > rhs->x_org ||
-                (lhs->x_org == rhs->x_org && lhs->y_org > rhs->y_org);
+        return  lhs->x_org  > rhs->x_org ||
+               (lhs->x_org == rhs->x_org && lhs->y_org > rhs->y_org);
 }
 
-static int
-xi_greater_screen_number(const xi_t **a, const xi_t **b)
+static int xi_greater_screen_number(const xi_t **a, const xi_t **b)
 {
         xi_t const *lhs = *a, *rhs = *b;
         return lhs->screen_number > rhs->screen_number;
 }
 
-static int
-xi_eq(const xi_t *lhs, const xi_t *rhs)
+static int xi_eq(const xi_t *lhs, const xi_t *rhs)
 {
         return lhs->x_org == rhs->x_org && lhs->y_org == rhs->y_org;
 }
 
-static void
-unique_xinerama_geometries(xi_t ***pptr, xi_t **pend)
+static void unique_xinerama_geometries(xi_t ***pptr, xi_t **pend)
 {
         xi_t **p = *pptr;
 
@@ -291,7 +281,7 @@ static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
         ASSERT(len);
 
         if ((xis = XineramaQueryScreens(DPY, &n))) {
-                ASSERT (n > 0);
+                ASSERT(n > 0);
 
                 if ((size_t)n > SIZEOF(pxis)) {
                         ppxis = malloc(n * sizeof *ppxis);
@@ -347,8 +337,8 @@ static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
 
 static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
 {
-#if defined (XINERAMA)
-        if (XineramaIsActive (DPY)) {
+#if defined(XINERAMA)
+        if (XineramaIsActive(DPY)) {
                 return get_xinerama_screen_geometries(buf, buflen);
         } else
 #endif /* XINERAMA */
@@ -380,9 +370,9 @@ static screen_t *make_screen(int i, rect_t *r)
         s->tags = 1U << (i + 1);
 
         s->showbar = config_showbar();
-        s->bh      = config_bar_height();
+        s->bh = config_bar_height();
 
-        s->master_size  = config_master_size();
+        s->master_size = config_master_size();
         s->master_ratio = config_master_ratio();
 
         s->client_head = s->focus_head = s->current_client = 0;
@@ -433,7 +423,7 @@ static void send_client_configuration(const client_t *c)
 
         x.x = state->g.r.x;
         x.y = state->g.r.y;
-        x.width  = state->g.r.w;
+        x.width = state->g.r.w;
         x.height = state->g.r.h;
 
         x.border_width = state->g.bw;
@@ -483,7 +473,7 @@ static void update_client_wm_hints(client_t *c)
         if ((hints = wm_hints(c->win))) {
                 state = &c->state[c->current_state];
 
-                state->urgent  = !!(hints->flags & XUrgencyHint);
+                state->urgent = !!(hints->flags & XUrgencyHint);
                 state->noinput = ((hints->flags & InputHint) && !hints->input);
 
                 XFree(hints);
@@ -545,7 +535,8 @@ static void grab_buttons(Window win, int focus);
 
 static client_t *first_visible_client(client_t *p, client_t *pend)
 {
-        for (; p && p != pend && !is_visible(p); p = p->next) ;
+        for (; p && p != pend && !is_visible(p); p = p->next)
+                ;
         return p;
 }
 
@@ -584,7 +575,8 @@ static void push_back(client_t *c)
         screen_t *s = c->screen;
         ASSERT(s);
 
-        for (pptr = &s->client_head; *pptr; pptr = &(*pptr)->next) ;
+        for (pptr = &s->client_head; *pptr; pptr = &(*pptr)->next)
+                ;
 
         c->next = *pptr;
         *pptr = c;
@@ -597,7 +589,8 @@ static void stack_push_back(client_t *c)
         screen_t *s = c->screen;
         ASSERT(s);
 
-        for (pptr = &s->focus_head; *pptr; pptr = &(*pptr)->focus_next) ;
+        for (pptr = &s->focus_head; *pptr; pptr = &(*pptr)->focus_next)
+                ;
 
         c->focus_next = *pptr;
         *pptr = c;
@@ -611,7 +604,8 @@ static void pop(client_t *c)
         ASSERT(c->screen);
 
         pptr = &c->screen->client_head;
-        for (; *pptr && *pptr != c; pptr = &(*pptr)->next) ;
+        for (; *pptr && *pptr != c; pptr = &(*pptr)->next)
+                ;
 
         ASSERT(*pptr);
         *pptr = c->next;
@@ -619,12 +613,13 @@ static void pop(client_t *c)
         c->next = 0;
 }
 
-static client_t *stack_top(screen_t* s)
+static client_t *stack_top(screen_t *s)
 {
         client_t *c;
 
         ASSERT(s);
-        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next) ;
+        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next)
+                ;
 
         return c;
 }
@@ -637,7 +632,8 @@ static void stack_pop(client_t *c)
         ASSERT(c->screen);
 
         pptr = &c->screen->focus_head;
-        for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next) ;
+        for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next)
+                ;
 
         ASSERT(*pptr);
         *pptr = c->focus_next;
@@ -646,6 +642,70 @@ static void stack_pop(client_t *c)
                 c->screen->current_client = stack_top(c->screen);
 
         c->focus_next = 0;
+}
+
+static void stack(screen_t *s)
+{
+        client_t *c, *cur;
+
+        Window ws[64], *pws = ws;
+        size_t n = 0, i = 0, j = 0, k = 0;
+
+        for (c = s->client_head; c; c = c->next) {
+                if (is_visible(c)) {
+                        ++n;
+
+                        if (is_ffft(c)) {
+                                ++k;
+
+                                if (!c->state[c->current_state].fullscreen)
+                                        ++j;
+                        }
+                }
+        }
+
+        if (0 == n)
+                return;
+
+        if (n > SIZEOF(ws)) {
+                pws = malloc(n * sizeof *pws);
+        }
+
+        cur = s->current_client;
+        ASSERT(cur);
+
+        if (is_ffft(cur)) {
+                if (cur->state[cur->current_state].fullscreen) {
+                        pws[j++] = cur->win;
+                } else {
+                        pws[i++] = cur->win;
+                }
+        } else {
+                pws[j++] = cur->win;
+                ++k;
+        }
+
+        for (c = s->client_head; c; c = c->next) {
+                if (c == cur || !is_visible(c))
+                        continue;
+
+                /* set_default_window_border(c); */
+
+                if (is_ffft(c)) {
+                        if (c->state[c->current_state].fullscreen) {
+                                pws[j++] = c->win;
+                        } else {
+                                pws[i++] = c->win;
+                        }
+                } else {
+                        pws[j++] = c->win;
+                }
+        }
+
+        XRestackWindows(DPY, pws, n);
+
+        if (pws != ws)
+                free(pws);
 }
 
 static void set_client_focus(client_t *c)
@@ -686,26 +746,28 @@ static void focus(client_t *c)
         }
 }
 
-static void unmanage(client_t* c)
+static void unmanage(client_t *c)
 {
         screen_t *s;
+        int current_client;
 
         ASSERT(c);
         ASSERT(c->screen);
 
+        s = c->screen;
+        current_client = (c == s->current_client);
+
         pop(c);
         stack_pop(c);
 
-        s = c->screen;
-
-        if (c == s->current_client)
-                if ((s->current_client = stack_top(s)))
-                        focus(s->current_client);
+        if (current_client)
+                focus(s->current_client);
 
         if (is_tile(c))
                 tile(s);
 
-        /* TODO: further cleanup window state? */
+        stack(s);
+
         free(c);
 }
 
@@ -730,7 +792,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         if (current_screen == s)
                 focus(c);
 
-        /* TODO: restack */
+        stack(s);
 
         return c;
 }
@@ -764,7 +826,8 @@ static void free_screens()
         screen_t *s = screen_head, *snext;
 
         for (; s; snext = s->next, free(s), s = snext)
-                for (; s->client_head; unmanage(s->client_head)) ;
+                for (; s->client_head; unmanage(s->client_head))
+                        ;
 }
 
 /**********************************************************************/
@@ -861,9 +924,9 @@ static int move_focus_left()
 
                 if (c && c != cur)
                         focus(c);
-
-                /* TODO : restack */
         }
+
+        stack(s);
 
         return 0;
 }
@@ -882,9 +945,9 @@ static int move_focus_right()
 
                 if (c && c != cur)
                         focus(c);
-
-                /* TODO : restack */
         }
+
+        stack(s);
 
         return 0;
 }
@@ -982,10 +1045,8 @@ typedef struct ptrcmd {
         int (*fun)();
 } ptrcmd_t;
 
-static ptrcmd_t g_ptrcmds[] = {
-        { MODKEY, Button1, move_window },
-        { MODKEY, Button3, resize_window }
-};
+static ptrcmd_t g_ptrcmds[] = { { MODKEY, Button1, move_window },
+                                { MODKEY, Button3, resize_window } };
 
 /**********************************************************************/
 
@@ -1030,6 +1091,7 @@ static int enter_notify_handler(XEvent *arg)
                 return 0;
 
         focus(c);
+        stack(c->screen);
 
         return 0;
 }
@@ -1043,6 +1105,8 @@ static int focus_in_handler(XEvent *arg)
 
         if (c && c->win != arg->xfocus.window)
                 focus(c);
+
+        stack(c->screen);
 
         return 0;
 }
@@ -1069,8 +1133,6 @@ static int unmap_notify_handler(XEvent *arg)
 
 static int map_request_handler(XEvent *arg)
 {
-        client_t *c;
-
         XMapRequestEvent *ev = &arg->xmaprequest;
         XWindowAttributes attr;
 
@@ -1078,10 +1140,8 @@ static int map_request_handler(XEvent *arg)
             attr.override_redirect)
                 return 0;
 
-        if (!is_managed(ev->window) && (c = manage(ev->window, &attr))) {
-                XMapWindow(DPY, c->win);
-                /* TODO: focus, etc. */
-        }
+        if (!is_managed(ev->window))
+                manage(ev->window, &attr);
 
         return 0;
 }
@@ -1155,7 +1215,7 @@ static void grab_keys(Window win)
 #define GRABKEYS(x)                                             \
         XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1,    \
                  GrabModeAsync, GrabModeAsync)
-/* clang-format on */
+        /* clang-format on */
 
         for (i = 0; i < SIZEOF(g_keycmds); ++i)
                 if ((keycode = XKeysymToKeycode(DPY, g_keycmds[i].keysym))) {
@@ -1191,6 +1251,8 @@ static void grab_buttons(Window win, int focus)
                             GrabModeAsync, GrabModeAsync,
                             None, None);
 
+
+/* clang-format off */
 #define GRABBUTTONS(x)                                  \
         XGrabButton(DPY,                                \
                     g_ptrcmds[i].button,                \
@@ -1198,6 +1260,7 @@ static void grab_buttons(Window win, int focus)
                     win, 0, BUTTONMASK,                 \
                     GrabModeAsync, GrabModeAsync,       \
                     None, None)
+/* clang-format on */
 
         for (i = 0; i < SIZEOF(g_ptrcmds); i++) {
                 GRABBUTTONS(0);
