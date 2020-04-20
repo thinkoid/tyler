@@ -543,6 +543,22 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
 static void grab_keys(Window win);
 static void grab_buttons(Window win, int focus);
 
+static client_t *first_visible_client(client_t *p, client_t *pend)
+{
+        for (; p && p != pend && !is_visible(p); p = p->next) ;
+        return p;
+}
+
+static client_t *last_visible_client(client_t *p, client_t *pend)
+{
+        client_t *c = 0;
+
+        for (; p && p != pend; p = p->next)
+                if (is_visible(p)) c = p;
+
+        return c;
+}
+
 static void push_front(client_t *c)
 {
         screen_t *s = c->screen;
@@ -840,18 +856,11 @@ static int move_focus_left()
         s = current_screen;
 
         if ((cur = s->current_client)) {
-                last = 0;
+                if (0 == (c = last_visible_client(s->client_head, cur)))
+                        c = last_visible_client(cur->next, 0);
 
-                for (c = s->client_head; c && c != cur; c = c->next)
-                        if (is_visible(c)) last = c;
-
-                if (0 == last) {
-                        for (c = cur->next; c; c = c->next)
-                                if (is_visible(c)) last = c;
-                }
-
-                if (last && last != cur)
-                        focus(last);
+                if (c && c != cur)
+                        focus(c);
 
                 /* TODO : restack */
         }
@@ -868,12 +877,8 @@ static int move_focus_right()
         s = current_screen;
 
         if ((cur = s->current_client)) {
-                for (c = cur->next; c && !is_visible(c); c = c->next) ;
-
-                if (0 == c) {
-                        c = s->client_head;
-                        for (; c && c != cur && !is_visible(c); c = c->next) ;
-                }
+                if (0 == (c = first_visible_client(cur->next, 0)))
+                        c = first_visible_client(s->client_head, cur);
 
                 if (c && c != cur)
                         focus(c);
