@@ -89,7 +89,7 @@ typedef struct client {
         state_t state[2];
         int current_state;
 
-        /* List link to next client, next client in stack */
+        /* List link to next client, next client in focus stack */
         client_t *next, *focus_next;
         screen_t *screen;
 } client_t;
@@ -543,7 +543,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
 static void grab_keys(Window win);
 static void grab_buttons(Window win, int focus);
 
-static void attach(client_t *c)
+static void push_front(client_t *c)
 {
         screen_t *s = c->screen;
         ASSERT(s);
@@ -552,7 +552,7 @@ static void attach(client_t *c)
         s->client_head = c;
 }
 
-static void attach_to_stack(client_t *c)
+static void stack_push_front(client_t *c)
 {
         screen_t *s = c->screen;
         ASSERT(s);
@@ -561,32 +561,73 @@ static void attach_to_stack(client_t *c)
         s->focus_head = c;
 }
 
-static void detach(client_t *c)
+static void push_back(client_t *c)
 {
         client_t **pptr;
 
+        screen_t *s = c->screen;
+        ASSERT(s);
+
+        for (pptr = &s->client_head; *pptr; pptr = &(*pptr)->next) ;
+
+        c->next = *pptr;
+        *pptr = c;
+}
+
+static void stack_push_back(client_t *c)
+{
+        client_t **pptr;
+
+        screen_t *s = c->screen;
+        ASSERT(s);
+
+        for (pptr = &s->focus_head; *pptr; pptr = &(*pptr)->focus_next) ;
+
+        c->focus_next = *pptr;
+        *pptr = c;
+}
+
+static void pop(client_t *c)
+{
+        client_t **pptr;
+
+        ASSERT(c);
         ASSERT(c->screen);
 
         pptr = &c->screen->client_head;
         for (; *pptr && *pptr != c; pptr = &(*pptr)->next) ;
 
-        if (*pptr == c)
-                *pptr = c->next;
+        ASSERT(*pptr);
+        *pptr = c->next;
 
         c->next = 0;
 }
 
-static void detach_from_stack(client_t *c)
+static client_t *stack_top(screen_t* s)
+{
+        client_t *c;
+
+        ASSERT(s);
+        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next) ;
+
+        return c;
+}
+
+static void stack_pop(client_t *c)
 {
         client_t **pptr;
 
+        ASSERT(c);
         ASSERT(c->screen);
 
         pptr = &c->screen->focus_head;
         for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next) ;
 
-        if (*pptr == c)
-                *pptr = c->focus_next;
+        ASSERT(*pptr);
+        *pptr = c->focus_next;
+
+        if (c == c->screen->current_client)
+                c->screen->current_client = stack_top(c->screen);
 
         c->focus_next = 0;
 }
@@ -601,85 +642,79 @@ static void set_client_focus(client_t *c)
         send_focus(c->win);
 }
 
-static void focus_client(client_t *c)
+static void focus(client_t *c)
 {
-        client_t *current_focus;
+        screen_t *s = c ? c->screen : current_screen;
+
+        if (0 == c || !is_visible(c))
+                if (0 == (c = stack_top(s)))
+                        return;
+
+        if (c != s->current_client) {
+                if (s->current_client) {
+                        set_default_window_border(s->current_client->win);
+                        grab_buttons(s->current_client->win, 0);
+                }
+
+                stack_pop(c);
+                stack_push_front(c);
+
+                s->current_client = c;
+        }
+
+        if (s == current_screen) {
+                set_select_window_border(c->win);
+                grab_buttons(c->win, 1);
+
+                set_client_focus(c);
+        }
+}
+
+static void unmanage(client_t* c)
+{
         screen_t *s;
 
         ASSERT(c);
         ASSERT(c->screen);
 
-        if (current_screen != (s = c->screen))
-                return;
+        pop(c);
+        stack_pop(c);
 
-        current_focus = s->focus_head;
-        ASSERT(current_focus);
+        s = c->screen;
 
-        if (c != current_focus) {
-                set_default_window_border(current_focus->win);
-                detach_from_stack(c);
-                attach_to_stack(c);
-        }
-
-        set_select_window_border(c->win);
-        set_client_focus(c);
-
-        grab_buttons(c->win, 1);
-}
-
-static void focus_screen(screen_t *s)
-{
-        if (0 == s)
-                s = current_screen;
-
-        if (s == current_screen && s->focus_head)
-                /*
-                 * Focus the focus stack head on current screen:
-                 */
-                focus_client(s->focus_head);
-}
-
-static void unfocus_screen(screen_t *s)
-{
-        ASSERT(s);
-        set_default_window_border(s->focus_head->win);
-        reset_focus();
-}
-
-static void unmanage(client_t* c)
-{
-        ASSERT(c);
-        ASSERT(c->screen);
-
-        detach(c);
-        detach_from_stack(c);
+        if (c == s->current_client)
+                if ((s->current_client = stack_top(s)))
+                        focus(s->current_client);
 
         if (is_tile(c))
-                tile(c->screen);
+                tile(s);
 
-        /* TODO: cleanup window state? */
+        /* TODO: further cleanup window state? */
         free(c);
-
-        if (current_screen == c->screen)
-                focus_screen(c->screen);
 }
 
 static client_t *manage(Window win, XWindowAttributes *attr)
 {
-        client_t *c = make_client(win, attr);
-        ASSERT(c->screen);
+        screen_t *s;
 
-        attach(c);
-        attach_to_stack(c);
+        client_t *c = make_client(win, attr);
+        ASSERT(c && c->screen);
+
+        s = c->screen;
+
+        push_front(c);
+        stack_push_front(c);
 
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
 
         if (is_tile(c))
-                tile(c->screen);
+                tile(s);
 
-        if (current_screen == c->screen)
-                focus_client(c);
+        if (current_screen == s)
+                focus(c);
+
+        /* TODO: restack */
 
         return c;
 }
@@ -798,11 +833,54 @@ static int toggle_bar()
 
 static int move_focus_left()
 {
+        screen_t *s;
+        client_t *c, *cur, *last;
+
+        ASSERT(current_screen);
+        s = current_screen;
+
+        if ((cur = s->current_client)) {
+                last = 0;
+
+                for (c = s->client_head; c && c != cur; c = c->next)
+                        if (is_visible(c)) last = c;
+
+                if (0 == last) {
+                        for (c = cur->next; c; c = c->next)
+                                if (is_visible(c)) last = c;
+                }
+
+                if (last && last != cur)
+                        focus(last);
+
+                /* TODO : restack */
+        }
+
         return 0;
 }
 
 static int move_focus_right()
 {
+        screen_t *s;
+        client_t *c, *cur;
+
+        ASSERT(current_screen);
+        s = current_screen;
+
+        if ((cur = s->current_client)) {
+                for (c = cur->next; c && !is_visible(c); c = c->next) ;
+
+                if (0 == c) {
+                        c = s->client_head;
+                        for (; c && c != cur && !is_visible(c); c = c->next) ;
+                }
+
+                if (c && c != cur)
+                        focus(c);
+
+                /* TODO : restack */
+        }
+
         return 0;
 }
 
@@ -946,7 +1024,7 @@ static int enter_notify_handler(XEvent *arg)
         if (0 == (c = client_of(ev->window)) || c == c->screen->focus_head)
                 return 0;
 
-        focus_client(c);
+        focus(c);
 
         return 0;
 }
@@ -959,7 +1037,7 @@ static int focus_in_handler(XEvent *arg)
         c = current_screen->focus_head;
 
         if (c && c->win != arg->xfocus.window)
-                focus_client(c);
+                focus(c);
 
         return 0;
 }
