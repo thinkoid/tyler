@@ -885,6 +885,38 @@ static void setup_sigchld()
 
 static int zoom()
 {
+        screen_t *s;
+        client_t *c, *cur;
+
+        ASSERT(current_screen);
+        s = current_screen;
+
+        cur = s->current_client;
+        if (cur) {
+                c = first_visible_client(s->client_head, 0);
+                ASSERT(c);
+
+                if (c == cur) {
+                        c = first_visible_client(c->next, 0);
+                        if (c && c != cur) {
+                                pop(c);
+                                push_front(c);
+
+                                stack_pop(c);
+                                stack_push_front(c);
+
+                                tile(s);
+                                stack(s);
+                        }
+                } else {
+                        pop(cur);
+                        push_front(cur);
+
+                        tile(s);
+                        stack(s);
+                }
+        }
+
         return 0;
 }
 
