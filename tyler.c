@@ -847,10 +847,13 @@ static void make_screens()
 static void free_screens()
 {
         screen_t *s = screen_head, *snext;
+        client_t *c, *cnext;
 
-        for (; s; snext = s->next, free(s), s = snext)
-                for (; s->client_head; unmanage(s->client_head))
+        for (; s; snext = s->next, free(s), s = snext) {
+                c = s->client_head;
+                for (; c; cnext = c->next, free(c), c = cnext)
                         ;
+        }
 }
 
 /**********************************************************************/
