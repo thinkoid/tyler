@@ -545,6 +545,13 @@ static client_t *first_visible_client(client_t *p, client_t *pend)
         return p;
 }
 
+static client_t *first_visible_tile(client_t *p, client_t *pend)
+{
+        for (; p && p != pend && !is_visible_tile(p); p = p->next)
+                ;
+        return p;
+}
+
 static client_t *last_visible_client(client_t *p, client_t *pend)
 {
         client_t *c = 0;
@@ -894,12 +901,12 @@ static int zoom()
         s = current_screen;
 
         cur = s->current_client;
-        if (cur) {
-                c = first_visible_client(s->client_head, 0);
+        if (cur && is_tile(cur)) {
+                c = first_visible_tile(s->client_head, 0);
                 ASSERT(c);
 
                 if (c == cur) {
-                        c = first_visible_client(c->next, 0);
+                        c = first_visible_tile(c->next, 0);
                         if (c && c != cur) {
                                 pop(c);
                                 push_front(c);
