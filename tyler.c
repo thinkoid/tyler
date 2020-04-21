@@ -798,10 +798,16 @@ static client_t *manage(Window win, XWindowAttributes *attr)
 {
         screen_t *s;
 
-        client_t *c = make_client(win, attr);
-        ASSERT(c && c->screen);
+        client_t *c = make_client(win, attr), *cur;
+        ASSERT(c);
 
         s = c->screen;
+        ASSERT(s);
+
+        if ((cur = s->current_client)) {
+                set_default_window_border(cur->win);
+                grab_buttons(cur->win, 0);
+        }
 
         push_front(c);
         stack_push_front(c);
