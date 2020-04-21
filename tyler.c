@@ -1149,10 +1149,10 @@ static int focus_in_handler(XEvent *arg)
         ASSERT(current_screen);
         c = current_screen->current_client;
 
-        if (c && c->win != arg->xfocus.window)
+        if (c && c->win != arg->xfocus.window) {
                 focus(c);
-
-        stack(c->screen);
+                stack(c->screen);
+        }
 
         return 0;
 }
