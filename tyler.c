@@ -1038,16 +1038,78 @@ static int grow_master()
 
 static int zap()
 {
+        client_t *cur;
+
+        ASSERT(current_screen);
+        cur = current_screen->current_client;
+
+        if (cur && !send(cur->win, WM_DELETE_WINDOW))
+                zap_window(cur->win);
+
         return 0;
 }
 
 static int focus_next_monitor()
 {
+        screen_t *s;
+        client_t *cur;
+
+        ASSERT(screen_head);
+        ASSERT(current_screen);
+
+        if (0 == (s = current_screen->next))
+                if (0 == (s = screen_head))
+                        return 0;
+
+        if (s == current_screen)
+                return 0;
+
+        if ((cur = current_screen->current_client)) {
+                set_default_window_border(cur->win);
+                grab_buttons(cur->win, 0);
+                reset_focus();
+        }
+
+        current_screen = s;
+
+        if ((cur = s->current_client))
+                focus(cur);
+
+        stack(s);
+
         return 0;
 }
 
 static int focus_prev_monitor()
 {
+        screen_t *s;
+        client_t *cur;
+
+        ASSERT(screen_head);
+        ASSERT(current_screen);
+
+        for (s = screen_head; s && s != current_screen; s = s->next) ;
+        ASSERT(s);
+
+        if (s == current_screen)
+                for (s = current_screen->next; s && s->next; s = s->next) ;
+
+        if (0 == s)
+                return 0;
+
+        if ((cur = current_screen->current_client)) {
+                set_default_window_border(cur->win);
+                grab_buttons(cur->win, 0);
+                reset_focus();
+        }
+
+        current_screen = s;
+
+        if ((cur = s->current_client))
+                focus(cur);
+
+        stack(s);
+
         return 0;
 }
 
