@@ -749,8 +749,6 @@ static void focus(client_t *c)
 
                 stack_pop(c);
                 stack_push_front(c);
-
-                s->current_client = c;
         }
 
         if (s == current_screen) {
