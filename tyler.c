@@ -735,23 +735,34 @@ static void set_client_focus(client_t *c)
 
 static void focus(client_t *c)
 {
-        screen_t *s = c ? c->screen : current_screen;
+        client_t *cur;
 
-        if (0 == c || !is_visible(c))
-                if (0 == (c = stack_top(s)))
+        if (0 == c)
+                if (0 == (c = stack_top(current_screen)))
                         return;
 
-        if (c != s->current_client) {
-                if (s->current_client) {
-                        set_default_window_border(s->current_client->win);
-                        grab_buttons(s->current_client->win, 0);
+        ASSERT(c);
+        ASSERT(c->screen);
+
+        if (!is_visible(c) && !is_visible((c = stack_top(c->screen))))
+                return;
+
+        if (c->screen != current_screen) {
+                if ((cur = current_screen->current_client)) {
+                        set_default_window_border(cur->win);
+                        grab_buttons(cur->win, 0);
+                }
+        } else {
+                if (c != (cur = c->screen->current_client)) {
+                        ASSERT(cur);
+
+                        set_default_window_border(cur->win);
+                        grab_buttons(cur->win, 0);
+
+                        stack_pop(c);
+                        stack_push_front(c);
                 }
 
-                stack_pop(c);
-                stack_push_front(c);
-        }
-
-        if (s == current_screen) {
                 set_select_window_border(c->win);
                 set_client_focus(c);
                 grab_buttons(c->win, 1);
