@@ -27,6 +27,7 @@
 
 /* clang-format off */
 #define BUTTONMASK (ButtonPressMask | ButtonReleaseMask)
+#define POINTERMASK (PointerMotionMask | BUTTONMASK)
 
 #define MODKEY Mod4Mask
 
@@ -144,8 +145,8 @@ static int is_visible_tile(client_t *c)
         return is_visible(c) && is_tile(c);
 }
 
-static void get_tiles_geometries(rect_t *r, size_t size, float ratio,
-                                 rect_t *rs, size_t n)
+static void get_tiles_geometries(rect_t *r, size_t size, float ratio, rect_t *rs,
+                                 size_t n)
 {
         int x, y, w, h, left, dist;
 
@@ -195,7 +196,8 @@ static size_t count_visible_clients(screen_t *s)
         size_t n;
 
         for (n = 0, c = s->client_head; c; c = c->next)
-                if (is_visible(c)) ++n;
+                if (is_visible(c))
+                        ++n;
 
         return n;
 }
@@ -206,7 +208,8 @@ static size_t count_visible_tiles(screen_t *s)
         size_t n;
 
         for (n = 0, c = s->client_head; c; c = c->next)
-                if (is_visible_tile(c)) ++n;
+                if (is_visible_tile(c))
+                        ++n;
 
         return n;
 }
@@ -219,7 +222,8 @@ static void tile(screen_t *s)
         size_t n;
 
         for (n = 0, c = s->client_head; c; c = c->next)
-                if (is_visible_tile(c)) ++n;
+                if (is_visible_tile(c))
+                        ++n;
 
         if (n > SIZEOF(rs)) {
                 prs = malloc(n * sizeof *prs);
@@ -245,7 +249,7 @@ static void tile(screen_t *s)
 static int xi_greater_x_then_y(const xi_t **a, const xi_t **b)
 {
         xi_t const *lhs = *a, *rhs = *b;
-        return  lhs->x_org  > rhs->x_org ||
+        return lhs->x_org > rhs->x_org ||
                (lhs->x_org == rhs->x_org && lhs->y_org > rhs->y_org);
 }
 
@@ -274,7 +278,7 @@ static void unique_xinerama_geometries(xi_t ***pptr, xi_t **pend)
 
 static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
 {
-        qsort_cmp_t by_x_then_y      = (qsort_cmp_t)xi_greater_x_then_y;
+        qsort_cmp_t by_x_then_y = (qsort_cmp_t)xi_greater_x_then_y;
         qsort_cmp_t by_screen_number = (qsort_cmp_t)xi_greater_screen_number;
 
         rect_t *prs = rs, *dst;
@@ -452,8 +456,10 @@ static void update_client_size_hints(client_t *c)
         size_hints(c->win, &x);
         fill_size_hints_defaults(&x);
 
-        h->aspect.min = x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
-        h->aspect.max = x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
+        h->aspect.min =
+                x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
+        h->aspect.max =
+                x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
 
         h->base.w = x.base_width;
         h->base.h = x.base_height;
@@ -557,7 +563,8 @@ static client_t *last_visible_client(client_t *p, client_t *pend)
         client_t *c = 0;
 
         for (; p && p != pend; p = p->next)
-                if (is_visible(p)) c = p;
+                if (is_visible(p))
+                        c = p;
 
         return c;
 }
@@ -1088,11 +1095,13 @@ static int focus_prev_monitor()
         ASSERT(screen_head);
         ASSERT(current_screen);
 
-        for (s = screen_head; s && s != current_screen; s = s->next) ;
+        for (s = screen_head; s && s != current_screen; s = s->next)
+                ;
         ASSERT(s);
 
         if (s == current_screen)
-                for (s = current_screen->next; s && s->next; s = s->next) ;
+                for (s = current_screen->next; s && s->next; s = s->next)
+                        ;
 
         if (0 == s)
                 return 0;
@@ -1371,12 +1380,8 @@ static void grab_buttons(Window win, int focus)
                 /*
                  * Button `passthrough' if client is not in focus:
                  */
-                XGrabButton(DPY,
-                            AnyButton, AnyModifier,
-                            win, 0, BUTTONMASK,
-                            GrabModeAsync, GrabModeAsync,
-                            None, None);
-
+                XGrabButton(DPY, AnyButton, AnyModifier, win, 0, BUTTONMASK,
+                            GrabModeAsync, GrabModeAsync, None, None);
 
 /* clang-format off */
 #define GRABBUTTONS(x)                                  \
