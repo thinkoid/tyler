@@ -1130,7 +1130,7 @@ static int enter_notify_handler(XEvent *arg)
         client_t *c;
         XCrossingEvent *ev = &arg->xcrossing;
 
-        if (ev->mode != NotifyNormal && ev->detail == NotifyInferior)
+        if (ev->mode != NotifyNormal || ev->detail == NotifyInferior)
                 return 0;
 
         if (0 == (c = client_for(ev->window)) || c == c->screen->current_client)
