@@ -1232,8 +1232,6 @@ static int do_move_client(client_t *c)
 
                                 tile(c->screen);
                                 stack(c->screen);
-
-                                XRaiseWindow(DPY, c->win);
                         }
 
                         XMoveResizeWindow(DPY, c->win, x, y, cw, ch);
