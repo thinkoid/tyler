@@ -219,6 +219,17 @@ static size_t count_visible_tiles(screen_t *s)
         return n;
 }
 
+static void move_resize_client(client_t *c, rect_t *r)
+{
+        state_t *state;
+
+        ASSERT(c);
+        state = &c->state[c->current_state];
+
+        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
+        memcpy(&state->g.r, r, sizeof *r);
+}
+
 static void tile(screen_t *s)
 {
         rect_t rs[64], *prs = rs, *r;
@@ -238,10 +249,8 @@ static void tile(screen_t *s)
         r = prs;
 
         for (c = s->client_head; c; c = c->next)
-                if (is_visible_tile(c)) {
-                        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
-                        ++r;
-                }
+                if (is_visible_tile(c))
+                        move_resize_client(c, r++);
 
         if (prs != rs)
                 free(prs);
