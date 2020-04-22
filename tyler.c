@@ -41,6 +41,9 @@
 #define  WIDTH(c) (GEOM(c)->r.w + 2 * GEOM(c)->bw)
 #define HEIGHT(c) (GEOM(c)->r.h + 2 * GEOM(c)->bw)
 
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
@@ -53,6 +56,15 @@
         | PropertyChangeMask                    \
         | 0/* StructureNotifyMask */)
 /* clang-format on */
+
+/**********************************************************************/
+
+static int clampi(int x, int lower, int upper)
+{
+    return MIN(upper, MAX(x, lower));
+}
+
+/**********************************************************************/
 
 #if defined(XINERAMA)
 typedef XineramaScreenInfo xi_t;
@@ -1269,8 +1281,87 @@ static int move_client()
         return 0;
 }
 
+static int do_resize_client(client_t *c)
+{
+        /*
+         * Pointer starting point rx, ry, starting client corner cx, cy, and
+         * displaced bottom-right corner x, y:
+         */
+        int rx, ry, cx, cy, x, y;
+        int cw, ch;
+
+        XEvent ev;
+        Time t = 0;
+
+        state_t *state;
+
+        ASSERT(c);
+        state = &c->state[c->current_state];
+
+        cx = x = state->g.r.x;
+        cy = y = state->g.r.y;
+
+        cw = state->g.r.w;
+        ch = state->g.r.h;
+
+        rx = cx + cw;
+        ry = cy + ch;
+
+        XWarpPointer(DPY, None, c->win, 0, 0, 0, 0, rx - 1, ry - 1);
+
+        do {
+                XMaskEvent(DPY, POINTERMASK | SubstructureRedirectMask, &ev);
+
+                switch (ev.type) {
+                case ConfigureRequest:
+                case MapRequest:
+                        handle_event(&ev);
+                        break;
+
+                case MotionNotify:
+                        if ((ev.xmotion.time - t) <= (1000 / 60))
+                                continue;
+
+                        t = ev.xmotion.time;
+
+                        x = ev.xmotion.x;
+                        y = ev.xmotion.y;
+
+                        if (!state->floating && (x != rx || y != ry)) {
+                                state->floating = 1;
+
+                                tile(c->screen);
+                                stack(c->screen);
+                        }
+
+                        if (x != ev.xmotion.x || y != ev.xmotion.y)
+                                XWarpPointer(DPY, None, c->win, 0, 0, 0, 0,
+                                             x - ev.xmotion.x, y - ev.xmotion.y);
+
+                        XMoveResizeWindow(DPY, c->win, cx, cy, x - cx, y - cy);
+
+                        state->g.r.w = x - cx;
+                        state->g.r.y = y - cy;
+
+                        break;
+                }
+        } while (ev.type != ButtonRelease);
+
+        return 0;
+}
+
 static int resize_client()
 {
+        client_t *c;
+
+        if (0 == (c = current_screen->current_client) || is_fullscreen(c))
+                return 0;
+
+        if (grab_pointer(RESIZE_CURSOR)) {
+                do_resize_client(c);
+                ungrab_pointer();
+        }
+
         return 0;
 }
 
