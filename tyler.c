@@ -471,21 +471,21 @@ static void send_client_configuration(const client_t *c)
 
 static void update_client_size_hints(client_t *c)
 {
-        state_t *state = &c->state[c->current_state];
-        size_hints_t *h = &c->size_hints;
+        state_t *state;
+        size_hints_t *h;
 
         XSizeHints x = { 0 };
 
-        /*
-         * Digest the raw size hints :
-         */
-        size_hints(c->win, &x);
+        ASSERT(c);
+
+        state = &c->state[c->current_state];
+        h = &c->size_hints;
+
+        get_size_hints(c->win, &x);
         fill_size_hints_defaults(&x);
 
-        h->aspect.min =
-                x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
-        h->aspect.max =
-                x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
+        h->aspect.min = x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
+        h->aspect.max = x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
 
         h->base.w = x.base_width;
         h->base.h = x.base_height;
@@ -1284,11 +1284,11 @@ static int move_client()
 static int do_resize_client(client_t *c)
 {
         /*
-         * Pointer starting point rx, ry, starting client corner cx, cy, and
+         * Pointer starting point rx, ry, starting client corner cx, cy,
          * displaced bottom-right corner x, y:
          */
         int rx, ry, cx, cy, x, y;
-        int cw, ch;
+        int cw, ch, minw, minh;
 
         XEvent ev;
         Time t = 0;
@@ -1306,6 +1306,9 @@ static int do_resize_client(client_t *c)
 
         rx = cx + cw;
         ry = cy + ch;
+
+        minw = c->size_hints.min.w;
+        minh = c->size_hints.min.h;
 
         XWarpPointer(DPY, None, c->win, 0, 0, 0, 0, rx - 1, ry - 1);
 
@@ -1333,6 +1336,9 @@ static int do_resize_client(client_t *c)
                                 tile(c->screen);
                                 stack(c->screen);
                         }
+
+                        if (x - cx < minw) x = cx + minw;
+                        if (y - cy < minh) y = cy + minh;
 
                         if (x != ev.xmotion.x || y != ev.xmotion.y)
                                 XWarpPointer(DPY, None, c->win, 0, 0, 0, 0,

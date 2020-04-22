@@ -25,6 +25,7 @@ void fill_size_hints_defaults(XSizeHints *hints)
         * provided, the minimum size is to be used in its place and vice
         * versa.
         */
+
         switch (hints->flags & (PBaseSize | PMinSize)) {
         case 0:
                 /* TODO: what now? */
@@ -45,7 +46,7 @@ void fill_size_hints_defaults(XSizeHints *hints)
         }
 }
 
-XSizeHints *size_hints(Window win, XSizeHints *hints)
+XSizeHints *get_size_hints(Window win, XSizeHints *hints)
 {
         long ignore;
         XSizeHints *p = hints;
