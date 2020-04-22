@@ -130,6 +130,11 @@ static int is_fullscreen(client_t *c)
         return c->state[c->current_state].fullscreen;
 }
 
+static int is_floating(client_t *c)
+{
+        return c->state[c->current_state].floating;
+}
+
 static int is_tile(client_t *c)
 {
         return !is_ffft(c);
@@ -1137,12 +1142,127 @@ static int quit()
         return g_running = 0;
 }
 
-static int move_window()
+static int get_root_pointer_coordinates(int *x, int *y)
 {
+        int i;
+        unsigned u;
+        Window w;
+
+        return XQueryPointer(DPY, ROOT, &w, &w, x, y, &i, &i, &u);
+}
+
+static int grab_pointer(cursor_t cursor)
+{
+        return GrabSuccess == XGrabPointer(
+                DPY, ROOT, False, POINTERMASK, GrabModeAsync, GrabModeAsync,
+                None, cursor, CurrentTime);
+}
+
+static void ungrab_pointer()
+{
+        XUngrabPointer(DPY, CurrentTime);
+}
+
+static int handle_event(XEvent *arg);
+
+static void snap(rect_t *r, int *x, int *y, int w, int h, int snap)
+{
+        if (abs(r->x - *x) < snap)
+                *x = r->x;
+        else if (abs((r->x + r->w) - (*x + w)) < snap)
+                *x = r->x + r->w - w;
+
+        if (abs(r->y - *y) < snap)
+                *y = r->y;
+        else if (abs((r->y + r->h) - (*y + h)) < snap)
+                *y = r->y + r->h - h;
+}
+
+static int do_move_client(client_t *c)
+{
+        /*
+         * Pointer starting point x, y, starting client corner x, y, and
+         * displaced corner x, y:
+         */
+        int rx, ry, cx, cy, x, y;
+        int cw, ch;
+
+        int snap_distance = config_snap();
+
+        XEvent ev;
+        Time t = 0;
+
+        state_t *state;
+
+        if (!get_root_pointer_coordinates(&rx, &ry))
+                return 0;
+
+        ASSERT(c);
+        state = &c->state[c->current_state];
+
+        cx = x = state->g.r.x;
+        cy = y = state->g.r.y;
+        cw = state->g.r.w;
+        ch = state->g.r.h;
+
+        do {
+                XMaskEvent(DPY, POINTERMASK | SubstructureRedirectMask, &ev);
+
+                switch (ev.type) {
+                case ConfigureRequest:
+                case MapRequest:
+                        handle_event(&ev);
+                        break;
+
+                case MotionNotify:
+                        if ((ev.xmotion.time - t) <= (1000 / 60))
+                                continue;
+
+                        t = ev.xmotion.time;
+
+                        x = cx + (ev.xmotion.x - rx);
+                        y = cy + (ev.xmotion.y - ry);
+
+                        snap(&c->screen->r, &x, &y, cw, ch, snap_distance);
+
+                        /* TODO : manage state, focus, transition between screens */
+
+                        if (!state->floating && (x != cx || y != cy)) {
+                                state->floating = 1;
+
+                                tile(c->screen);
+                                stack(c->screen);
+
+                                XRaiseWindow(DPY, c->win);
+                        }
+
+                        XMoveResizeWindow(DPY, c->win, x, y, cw, ch);
+                        break;
+                }
+        } while (ev.type != ButtonRelease);
+
+        state->g.r.x = x;
+        state->g.r.y = y;
+
         return 0;
 }
 
-static int resize_window()
+static int move_client()
+{
+        client_t *c;
+
+        if (0 == (c = current_screen->current_client) || is_fullscreen(c))
+                return 0;
+
+        if (grab_pointer(MOVE_CURSOR)) {
+                do_move_client(c);
+                ungrab_pointer();
+        }
+
+        return 0;
+}
+
+static int resize_client()
 {
         return 0;
 }
@@ -1180,8 +1300,8 @@ typedef struct ptrcmd {
         int (*fun)();
 } ptrcmd_t;
 
-static ptrcmd_t g_ptrcmds[] = { { MODKEY, Button1, move_window },
-                                { MODKEY, Button3, resize_window } };
+static ptrcmd_t g_ptrcmds[] = { { MODKEY, Button1, move_client },
+                                { MODKEY, Button3, resize_client } };
 
 /**********************************************************************/
 
@@ -1208,10 +1328,24 @@ static int key_press_handler(XEvent *arg)
         return do_key_press_handler(keysym, mod);
 }
 
+static int do_button_press_handler(unsigned button, unsigned mod)
+{
+        ptrcmd_t *p = g_ptrcmds, *pend = g_ptrcmds + SIZEOF(g_ptrcmds);
+
+        update_numlockmask();
+
+        for (; p != pend; ++p)
+                if (button == p->button && mod == CLEANMASK(p->mod) && p->fun)
+                        return p->fun();
+
+        return 0;
+}
+
 static int button_press_handler(XEvent *arg)
 {
-        UNUSED(arg);
-        return 0;
+        XButtonEvent *ev = &arg->xbutton;
+        unsigned mod = CLEANMASK(ev->state);
+        return do_button_press_handler(ev->button, CLEANMASK(mod));
 }
 
 static int enter_notify_handler(XEvent *arg)
