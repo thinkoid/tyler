@@ -22,6 +22,8 @@ static const int g_cursors[] = {
 static const char *g_termcmd[] = {
         "st", "-f", "Fira Code Retina:size=10", 0
 };
+
+static int g_snap = 5;
 /* clang-format on */
 
 const char **config_colors()
@@ -72,4 +74,9 @@ int config_master_size()
 float config_master_ratio()
 {
         return g_master_ratio;
+}
+
+int config_snap()
+{
+        return g_snap;
 }

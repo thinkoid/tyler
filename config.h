@@ -23,4 +23,6 @@ int config_bar_height();
 int config_master_size();
 float config_master_ratio();
 
+int config_snap();
+
 #endif /* WM_CONFIG_H */
