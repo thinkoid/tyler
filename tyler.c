@@ -127,9 +127,27 @@ static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
 /**********************************************************************/
 
+static state_t *state_of(client_t *c)
+{
+        ASSERT(c);
+        return &c->state[c->current_state];
+}
+
+#define IS_TRAIT_DEF(x)                                 \
+        static int WM_CAT(is_, x)(client_t *c) {        \
+                return state_of(c)->x;                  \
+        }
+
+IS_TRAIT_DEF(fixed)
+IS_TRAIT_DEF(fullscreen)
+IS_TRAIT_DEF(floating)
+IS_TRAIT_DEF(transient)
+
+#undef IS_TRAIT_DEF
+
 static int is_ffft(client_t *c)
 {
-        state_t *state = &c->state[c->current_state];
+        state_t *state = state_of(c);
         return !!(0
                   | state->fixed
                   | state->floating
