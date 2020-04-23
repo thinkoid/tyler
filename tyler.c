@@ -129,7 +129,6 @@ static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
 static state_t *state_of(client_t *c)
 {
-        ASSERT(c);
         return &c->state[c->current_state];
 }
 
@@ -246,13 +245,8 @@ static size_t count_visible_tiles(screen_t *s)
 
 static void move_resize_client(client_t *c, rect_t *r)
 {
-        state_t *state;
-
-        ASSERT(c);
-        state = state_of(c);
-
         XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
-        memcpy(&state->g.r, r, sizeof *r);
+        memcpy(&state_of(c)->g.r, r, sizeof *r);
 }
 
 static void tile(screen_t *s)
@@ -325,12 +319,7 @@ static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
 
         xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis, *src;
 
-        ASSERT(rs);
-        ASSERT(len);
-
         if ((xis = XineramaQueryScreens(DPY, &n))) {
-                ASSERT(n > 0);
-
                 if ((size_t)n > SIZEOF(pxis)) {
                         ppxis = malloc(n * sizeof *ppxis);
                 }
@@ -391,11 +380,9 @@ static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
         } else
 #endif /* XINERAMA */
         {
-                ASSERT(buf);
-                ASSERT(buflen && buflen[0]);
-
                 buf->x = 0;
                 buf->y = 0;
+
                 buf->w = display_width();
                 buf->h = display_height();
 
@@ -484,17 +471,11 @@ static void send_client_configuration(client_t *c)
 
 static void update_client_size_hints(client_t *c)
 {
-        state_t *state;
-        size_hints_t *h;
+        size_hints_t *h = &c->size_hints;
 
         XSizeHints x = { 0 };
-
-        ASSERT(c);
-
-        state = state_of(c);
-        h = &c->size_hints;
-
         get_size_hints(c->win, &x);
+
         fill_size_hints_defaults(&x);
 
         h->aspect.min = x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
@@ -512,7 +493,7 @@ static void update_client_size_hints(client_t *c)
         h->max.w = x.max_width;
         h->max.h = x.max_height;
 
-        state->fixed = h->max.w == h->min.w && h->max.h == h->min.h;
+        state_of(c)->fixed = h->max.w == h->min.w && h->max.h == h->min.h;
 }
 
 static void update_client_wm_hints(client_t *c)
@@ -610,33 +591,24 @@ static client_t *last_visible_client(client_t *p, client_t *pend)
 
 static void push_front(client_t *c)
 {
-        screen_t *s = c->screen;
-        ASSERT(s);
-
-        c->next = s->client_head;
-        s->client_head = c;
+        c->next = c->screen->client_head;
+        c->screen->client_head = c;
 }
 
 static void stack_push_front(client_t *c)
 {
-        screen_t *s = c->screen;
-        ASSERT(s);
-
-        c->focus_next = s->focus_head;
-        s->focus_head = c;
+        c->focus_next = c->screen->focus_head;
+        c->screen->focus_head = c;
 
         if (is_visible(c))
-                s->current_client = c;
+                c->screen->current_client = c;
 }
 
 static void push_back(client_t *c)
 {
         client_t **pptr;
 
-        screen_t *s = c->screen;
-        ASSERT(s);
-
-        for (pptr = &s->client_head; *pptr; pptr = &(*pptr)->next)
+        for (pptr = &c->screen->client_head; *pptr; pptr = &(*pptr)->next)
                 ;
 
         c->next = *pptr;
@@ -647,10 +619,7 @@ static void stack_push_back(client_t *c)
 {
         client_t **pptr;
 
-        screen_t *s = c->screen;
-        ASSERT(s);
-
-        for (pptr = &s->focus_head; *pptr; pptr = &(*pptr)->focus_next)
+        for (pptr = &c->screen->focus_head; *pptr; pptr = &(*pptr)->focus_next)
                 ;
 
         c->focus_next = *pptr;
@@ -659,12 +628,8 @@ static void stack_push_back(client_t *c)
 
 static void pop(client_t *c)
 {
-        client_t **pptr;
+        client_t **pptr = &c->screen->client_head;
 
-        ASSERT(c);
-        ASSERT(c->screen);
-
-        pptr = &c->screen->client_head;
         for (; *pptr && *pptr != c; pptr = &(*pptr)->next)
                 ;
 
@@ -676,10 +641,9 @@ static void pop(client_t *c)
 
 static client_t *stack_top(screen_t *s)
 {
-        client_t *c;
+        client_t *c = s->focus_head;
 
-        ASSERT(s);
-        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next)
+        for (; c && !is_visible(c); c = c->focus_next)
                 ;
 
         return c;
@@ -688,9 +652,6 @@ static client_t *stack_top(screen_t *s)
 static void stack_pop(client_t *c)
 {
         client_t **pptr;
-
-        ASSERT(c);
-        ASSERT(c->screen);
 
         pptr = &c->screen->focus_head;
         for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next)
@@ -783,12 +744,8 @@ static void focus(client_t *c)
 {
         client_t *cur;
 
-        if (0 == c)
-                if (0 == (c = stack_top(current_screen)))
-                        return;
-
-        ASSERT(c);
-        ASSERT(c->screen);
+        if (0 == c && 0 == (c = stack_top(current_screen)))
+                return;
 
         if (!is_visible(c) && !is_visible((c = stack_top(c->screen))))
                 return;
@@ -817,14 +774,9 @@ static void focus(client_t *c)
 
 static void unmanage(client_t *c)
 {
-        screen_t *s;
-        int current_client;
+        screen_t *s = c->screen;
 
-        ASSERT(c);
-        ASSERT(c->screen);
-
-        s = c->screen;
-        current_client = (c == s->current_client);
+        int current_client = (c == s->current_client);
 
         pop(c);
         stack_pop(c);
@@ -844,7 +796,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
 {
         screen_t *s;
 
-        client_t *c = make_client(win, attr), *cur;
+        client_t *cur, *c = make_client(win, attr);
         ASSERT(c);
 
         s = c->screen;
@@ -889,11 +841,11 @@ static void make_screens()
                 pptr = &(*pptr)->next;
         }
 
-        if (prs != rs)
-                free(prs);
-
         ASSERT(screen_head);
         current_screen = screen_head;
+
+        if (prs != rs)
+                free(prs);
 }
 
 static void free_screens()
@@ -958,14 +910,12 @@ static void setup_sigchld()
 
 static int zoom()
 {
-        screen_t *s;
         client_t *c, *cur;
 
-        ASSERT(current_screen);
-        s = current_screen;
+        screen_t *s = current_screen;
+        ASSERT(s);
 
-        cur = s->current_client;
-        if (cur && is_tile(cur)) {
+        if ((cur = s->current_client) && is_tile(cur)) {
                 c = first_visible_tile(s->client_head, 0);
                 ASSERT(c);
 
@@ -1225,8 +1175,6 @@ static int do_move_client(client_t *c)
         if (!get_root_pointer_coordinates(&xorig, &yorig))
                 return 0;
 
-        ASSERT(c);
-
         state = state_of(c);
         r = &state->g.r;
 
@@ -1290,8 +1238,6 @@ static int do_resize_client(client_t *c)
 
         state_t *state;
         rect_t *r;
-
-        ASSERT(c);
 
         state = state_of(c);
         r = &state->g.r;
