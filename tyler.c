@@ -155,24 +155,19 @@ static int is_ffft(client_t *c)
                   | state->fullscreen);
 }
 
-static int is_fullscreen(client_t *c)
-{
-        return c->state[c->current_state].fullscreen;
-}
-
-static int is_floating(client_t *c)
-{
-        return c->state[c->current_state].floating;
-}
-
 static int is_tile(client_t *c)
 {
         return !is_ffft(c);
 }
 
+static int is_resizeable(client_t *c)
+{
+        return !is_fullscreen(c) && !is_fixed(c);
+}
+
 static int is_visible(client_t *c)
 {
-        return !!(c->state[c->current_state].tags & c->screen->tags);
+        return !!(state_of(c)->tags & c->screen->tags);
 }
 
 static int is_visible_tile(client_t *c)
@@ -254,7 +249,7 @@ static void move_resize_client(client_t *c, rect_t *r)
         state_t *state;
 
         ASSERT(c);
-        state = &c->state[c->current_state];
+        state = state_of(c);
 
         XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
         memcpy(&state->g.r, r, sizeof *r);
@@ -460,9 +455,9 @@ static client_t *transient_client_for(Window win)
         return (other = transient_for_property(win)) ? client_for(other) : 0;
 }
 
-static void send_client_configuration(const client_t *c)
+static void send_client_configuration(client_t *c)
 {
-        const state_t *state;
+        state_t *state;
 
         XConfigureEvent x;
 
@@ -472,7 +467,7 @@ static void send_client_configuration(const client_t *c)
         x.event = c->win;
         x.window = c->win;
 
-        state = &c->state[c->current_state];
+        state = state_of(c);
 
         x.x = state->g.r.x;
         x.y = state->g.r.y;
@@ -496,7 +491,7 @@ static void update_client_size_hints(client_t *c)
 
         ASSERT(c);
 
-        state = &c->state[c->current_state];
+        state = state_of(c);
         h = &c->size_hints;
 
         get_size_hints(c->win, &x);
@@ -526,7 +521,7 @@ static void update_client_wm_hints(client_t *c)
         XWMHints *hints;
 
         if ((hints = wm_hints(c->win))) {
-                state = &c->state[c->current_state];
+                state = state_of(c);
 
                 state->urgent = !!(hints->flags & XUrgencyHint);
                 state->noinput = ((hints->flags & InputHint) && !hints->input);
@@ -547,7 +542,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
 
         c->win = win;
 
-        state = &c->state[c->current_state];
+        state = state_of(c);
         geom = &state->g;
 
         geom->r.x = attr->x;
@@ -724,7 +719,7 @@ static void stack(screen_t *s)
                         if (is_ffft(c)) {
                                 ++k;
 
-                                if (!c->state[c->current_state].fullscreen)
+                                if (!state_of(c)->fullscreen)
                                         ++j;
                         }
                 }
@@ -758,7 +753,7 @@ static void stack(screen_t *s)
                 /* set_default_window_border(c); */
 
                 if (is_ffft(c)) {
-                        if (c->state[c->current_state].fullscreen) {
+                        if (state_of(c)->fullscreen) {
                                 pws[j++] = c->win;
                         } else {
                                 pws[i++] = c->win;
@@ -776,7 +771,7 @@ static void stack(screen_t *s)
 
 static void set_client_focus(client_t *c)
 {
-        state_t *state = &c->state[c->current_state];
+        state_t *state = state_of(c);
 
         if (!state->noinput)
                 set_focus(c->win);
@@ -1219,30 +1214,21 @@ static void snap(rect_t *r, int *x, int *y, int w, int h, int snap)
 
 static int do_move_client(client_t *c)
 {
-        /*
-         * Pointer starting point x, y, starting client corner x, y, and
-         * displaced corner x, y:
-         */
-        int rx, ry, cx, cy, x, y;
-        int cw, ch;
-
-        int snap_distance = config_snap();
+        int x, y, xorig, yorig;
 
         XEvent ev;
         Time t = 0;
 
         state_t *state;
+        rect_t *r;
 
-        if (!get_root_pointer_coordinates(&rx, &ry))
+        if (!get_root_pointer_coordinates(&xorig, &yorig))
                 return 0;
 
         ASSERT(c);
-        state = &c->state[c->current_state];
 
-        cx = x = state->g.r.x;
-        cy = y = state->g.r.y;
-        cw = state->g.r.w;
-        ch = state->g.r.h;
+        state = state_of(c);
+        r = &state->g.r;
 
         do {
                 XMaskEvent(DPY, POINTERMASK | SubstructureRedirectMask, &ev);
@@ -1259,27 +1245,23 @@ static int do_move_client(client_t *c)
 
                         t = ev.xmotion.time;
 
-                        x = cx + (ev.xmotion.x - rx);
-                        y = cy + (ev.xmotion.y - ry);
+                        x = r->x + (ev.xmotion.x - xorig);
+                        y = r->y + (ev.xmotion.y - yorig);
 
-                        snap(&c->screen->r, &x, &y, cw, ch, snap_distance);
-
-                        /* TODO : manage state, focus, transition between screens */
-
-                        if (!state->floating && (x != cx || y != cy)) {
+                        if (!state->floating && (x != r->x || y != r->y)) {
                                 state->floating = 1;
 
                                 tile(c->screen);
                                 stack(c->screen);
                         }
 
-                        XMoveResizeWindow(DPY, c->win, x, y, cw, ch);
+                        XMoveResizeWindow(DPY, c->win, x, y, r->w, r->h);
                         break;
                 }
         } while (ev.type != ButtonRelease);
 
-        state->g.r.x = x;
-        state->g.r.y = y;
+        r->x = x;
+        r->y = y;
 
         return 0;
 }
@@ -1301,34 +1283,23 @@ static int move_client()
 
 static int do_resize_client(client_t *c)
 {
-        /*
-         * Pointer starting point rx, ry, starting client corner cx, cy,
-         * displaced bottom-right corner x, y:
-         */
-        int rx, ry, cx, cy, x, y;
-        int cw, ch, minw, minh;
+        int x, y, minw, minh;
 
         XEvent ev;
         Time t = 0;
 
         state_t *state;
+        rect_t *r;
 
         ASSERT(c);
-        state = &c->state[c->current_state];
 
-        cx = x = state->g.r.x;
-        cy = y = state->g.r.y;
-
-        cw = state->g.r.w;
-        ch = state->g.r.h;
-
-        rx = cx + cw;
-        ry = cy + ch;
+        state = state_of(c);
+        r = &state->g.r;
 
         minw = c->size_hints.min.w;
         minh = c->size_hints.min.h;
 
-        XWarpPointer(DPY, None, c->win, 0, 0, 0, 0, rx - 1, ry - 1);
+        XWarpPointer(DPY, None, c->win, 0, 0, 0, 0, r->w - 1, r->h - 1);
 
         do {
                 XMaskEvent(DPY, POINTERMASK | SubstructureRedirectMask, &ev);
@@ -1348,25 +1319,27 @@ static int do_resize_client(client_t *c)
                         x = ev.xmotion.x;
                         y = ev.xmotion.y;
 
-                        if (!state->floating && (x != rx || y != ry)) {
+                        if (!state->floating &&
+                            (x != r->x + r->w || y != r->y + r->h)) {
                                 state->floating = 1;
 
                                 tile(c->screen);
                                 stack(c->screen);
                         }
 
-                        if (x - cx < minw) x = cx + minw;
-                        if (y - cy < minh) y = cy + minh;
+                        if (x - r->x < minw) x = r->x + minw;
+                        if (y - r->y < minh) y = r->y + minh;
 
                         if (x != ev.xmotion.x || y != ev.xmotion.y)
                                 XWarpPointer(DPY, None, c->win, 0, 0, 0, 0,
-                                             x - ev.xmotion.x, y - ev.xmotion.y);
+                                             x - r->x - 1, y - r->y - 1);
 
-                        XMoveResizeWindow(DPY, c->win, cx, cy, x - cx, y - cy);
+                        r->w = x - r->x;
+                        r->h = y - r->y;
 
-                        state->g.r.w = x - cx;
-                        state->g.r.y = y - cy;
-
+                        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
+                        break;
+                default:
                         break;
                 }
         } while (ev.type != ButtonRelease);
@@ -1378,7 +1351,7 @@ static int resize_client()
 {
         client_t *c;
 
-        if (0 == (c = current_screen->current_client) || is_fullscreen(c))
+        if (0 == (c = current_screen->current_client) || !is_resizeable(c))
                 return 0;
 
         if (grab_pointer(RESIZE_CURSOR)) {
