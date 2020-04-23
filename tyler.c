@@ -245,8 +245,14 @@ static size_t count_visible_tiles(screen_t *s)
 
 static void move_resize_client(client_t *c, rect_t *r)
 {
-        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
-        memcpy(&state_of(c)->g.r, r, sizeof *r);
+        geom_t *g = &state_of(c)->g;
+        memcpy(&g->r, r, sizeof *r);
+
+        XMoveResizeWindow(DPY, c->win,
+                          g->r.x,
+                          g->r.y,
+                          g->r.w - 2 * g->bw,
+                          g->r.h - 2 * g->bw);
 }
 
 static void tile(screen_t *s)
