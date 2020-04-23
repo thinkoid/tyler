@@ -1314,6 +1314,55 @@ static int resize_client()
         return 0;
 }
 
+static void unmap_all()
+{
+        client_t *c;
+
+        pause_propagate(ROOT, SubstructureNotifyMask);
+
+        for (c = current_screen->client_head; c; c = c->next)
+                if (is_visible(c)) XUnmapWindow(DPY, c->win);
+
+        resume_propagate(ROOT, SubstructureNotifyMask);
+}
+
+static void map_all()
+{
+        client_t *c;
+
+        for (c = current_screen->client_head; c; c = c->next)
+                if (is_visible(c)) XMapWindow(DPY, c->win);
+}
+
+static int tag(int n)
+{
+        if ((1U << n) != current_screen->tags) {
+                unmap_all(current_screen);
+
+                current_screen->tags = 1U << n;
+                map_all(current_screen);
+
+                focus(0);
+
+                tile(current_screen);
+                stack(current_screen);
+        }
+
+        return 0;
+}
+
+#define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(x); }
+TAG_DEF(1)
+TAG_DEF(2)
+TAG_DEF(3)
+TAG_DEF(4)
+TAG_DEF(5)
+TAG_DEF(6)
+TAG_DEF(7)
+TAG_DEF(8)
+TAG_DEF(9)
+#undef TAG_DEF
+
 /**********************************************************************/
 
 typedef struct keycmd {
@@ -1338,7 +1387,13 @@ static keycmd_t g_keycmds[] = {
         { MODKEY,               XK_period,  focus_prev_monitor },
         { MODKEY | ShiftMask,   XK_comma,   move_next_monitor  },
         { MODKEY | ShiftMask,   XK_period,  move_prev_monitor  },
-        { MODKEY | ShiftMask,   XK_q,       quit               }
+        { MODKEY | ShiftMask,   XK_q,       quit               },
+
+#define TAG_DEF(x) { MODKEY, WM_CAT(XK_, x), WM_CAT(tag_, x) }
+        TAG_DEF(1), TAG_DEF(2), TAG_DEF(3), TAG_DEF(4), TAG_DEF(5),
+        TAG_DEF(6), TAG_DEF(7), TAG_DEF(8), TAG_DEF(9)
+#undef TAG_DEF
+
         /* clang-format on */
 };
 
