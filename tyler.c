@@ -1184,6 +1184,9 @@ static int do_move_client(client_t *c)
         state = state_of(c);
         r = &state->g.r;
 
+        x = r->x;
+        y = r->y;
+
         do {
                 XMaskEvent(DPY, POINTERMASK | SubstructureRedirectMask, &ev);
 
