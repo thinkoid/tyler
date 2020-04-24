@@ -775,6 +775,18 @@ static void focus(client_t *c)
         }
 }
 
+static void focus_screen(screen_t *s)
+{
+        if (0 == s && 0 == (s = current_screen))
+                return;
+
+        if (0 == s->current_client)
+                s->current_client = stack_top(s);
+
+        if (s->current_client)
+                focus(s->current_client);
+}
+
 static void unmanage(client_t *c)
 {
         screen_t *s = c->screen;
@@ -861,6 +873,109 @@ static void free_screens()
                 for (; c; cnext = c->next, free(c), c = cnext)
                         ;
         }
+}
+
+static int compare_screens(rect_t *rs, size_t n)
+{
+        size_t i = 0;
+        screen_t *s = screen_head;
+
+        for (; i < n && s; ++i, s = s->next)
+                if (memcmp (rs + i, &s->r, sizeof *rs))
+                        return 1;
+
+        return !(i == n && 0 == s);
+}
+
+static int update_screen(screen_t *s, rect_t *r)
+{
+        if (memcmp(r, &s->r, sizeof *r)) {
+                memcpy(&s->r, r, sizeof *r);
+
+                focus_screen(s);
+
+                tile(s);
+                stack(s);
+        }
+
+        return 0;
+}
+
+static int update_screens()
+{
+        screen_t **pps = &screen_head, *ptmp, *ps = *pps, *pscur = 0;
+        client_t *head, *cur, *c;
+
+        rect_t rs[16], *prs = rs;
+        size_t i, n = SIZEOF(rs);
+
+        prs = get_all_screens_geometries(rs, &n);
+
+        ASSERT(prs);
+        ASSERT(n);
+
+        for (i = 0; i < n && *pps; ++i, pps = &(*pps)->next) {
+                if (current_screen == (ps = *pps))
+                        /*
+                         * Save the current screen if found:
+                         */
+                        pscur = ps;
+
+                update_screen(ps, prs + i);
+        }
+
+        for (; i < n; ++i, pps = &(*pps)->next) {
+                /*
+                 * If there are more geometries than screens, create one screen
+                 * for each remaining ones:
+                 */
+                *pps = make_screen(i, prs + i);
+        }
+
+        if (*pps) {
+                if (0 == pscur)
+                        /*
+                         * If current screen has not been found it means it
+                         * is one of the lost screens. Transfer all clients to
+                         * the last valid screen:
+                         */
+                        pscur = ps;
+
+                ps = *pps;
+                *pps = 0;
+
+                for (; ps; ptmp = ps->next, free(ps), ps = ptmp) {
+                        if (ps == current_screen) {
+                                if ((cur = ps->current_client)) {
+                                        set_default_window_border(cur->win);
+                                        reset_focus();
+                                }
+                        }
+
+                        head = ps->client_head;
+
+                        for (c = head; c; c = c->next)
+                                c->screen = ps;
+
+                        if (head) {
+                                push_back(head);
+                                stack_push_back(head);
+                        }
+                }
+        }
+
+        current_screen = pscur;
+        ASSERT(current_screen);
+
+        focus(0);
+
+        tile(current_screen);
+        stack(current_screen);
+
+        if (prs != rs)
+                free(prs);
+
+        return 0;
 }
 
 /**********************************************************************/
@@ -1523,6 +1638,16 @@ static int configure_request_handler(XEvent *arg)
         return 0;
 }
 
+static int configure_notify_handler(XEvent *arg)
+{
+        XConfigureEvent *ev = &arg->xconfigure;
+
+        if (ROOT == ev->window)
+                update_screens();
+
+        return 0;
+}
+
 static int property_notify_handler(XEvent *arg)
 {
         UNUSED(arg);
@@ -1552,7 +1677,8 @@ static int handle_event(XEvent *arg)
                 unmap_notify_handler,  /* 18 */
                 0,
                 map_request_handler, /* 20 */
-                0, 0,
+                0,
+                configure_notify_handler, /* 22 */
                 configure_request_handler, /* 23 */
                 0, 0, 0, 0,
                 property_notify_handler, /* 28 */
