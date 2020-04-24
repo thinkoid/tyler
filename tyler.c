@@ -320,10 +320,10 @@ static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
         qsort_cmp_t by_x_then_y = (qsort_cmp_t)xi_greater_x_then_y;
         qsort_cmp_t by_screen_number = (qsort_cmp_t)xi_greater_screen_number;
 
-        rect_t *prs = rs, *dst;
+        rect_t *prs = rs;
         int i, n;
 
-        xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis, *src;
+        xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis;
 
         if ((xis = XineramaQueryScreens(DPY, &n))) {
                 if ((size_t)n > SIZEOF(pxis)) {
@@ -355,14 +355,11 @@ static rect_t *get_xinerama_screen_geometries(rect_t *rs, size_t *len)
 
                 *len = n;
 
-                for (i = 0; i < n; ++i, ++src, ++dst) {
-                        src = ppxis[i];
-                        dst = prs;
-
-                        dst->x = src->x_org;
-                        dst->y = src->y_org;
-                        dst->w = src->width;
-                        dst->h = src->height;
+                for (i = 0; i < n; ++i) {
+                        prs[i].x = ppxis[i]->x_org;
+                        prs[i].y = ppxis[i]->y_org;
+                        prs[i].w = ppxis[i]->width;
+                        prs[i].h = ppxis[i]->height;
                 }
 
                 XFree(xis);
