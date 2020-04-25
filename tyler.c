@@ -1717,7 +1717,22 @@ static int map_request_handler(XEvent *arg)
 
 static int configure_request_handler(XEvent *arg)
 {
-        UNUSED(arg);
+        client_t *c;
+        XConfigureRequestEvent *ev = &arg->xconfigurerequest;
+
+        XWindowChanges wc = {
+                ev->x, ev->y,  ev->width, ev->height, ev->border_width,
+                ev->above, ev->detail
+        };
+
+        if (XConfigureWindow(DPY, ev->window, ev->value_mask, &wc))
+                XSync(DPY, 0);
+
+        if ((c = client_for(ev->window))) {
+                tile(c->screen);
+                stack(c->screen);
+        }
+
         return 0;
 }
 
