@@ -743,6 +743,14 @@ static void set_client_focus(client_t *c)
         send_focus(c->win);
 }
 
+static void unfocus(client_t *c)
+{
+        if (c) {
+                set_default_window_border(c->win);
+                grab_buttons(c->win, 0);
+        }
+}
+
 static void focus(client_t *c)
 {
         client_t *cur;
@@ -755,15 +763,13 @@ static void focus(client_t *c)
 
         if (c->screen != current_screen) {
                 if ((cur = current_screen->current_client)) {
-                        set_default_window_border(cur->win);
-                        grab_buttons(cur->win, 0);
+                        unfocus(cur);
                 }
         } else {
                 if (c != (cur = c->screen->current_client)) {
                         ASSERT(cur);
 
-                        set_default_window_border(cur->win);
-                        grab_buttons(cur->win, 0);
+                        unfocus(cur);
 
                         stack_pop(c);
                         stack_push_front(c);
@@ -785,6 +791,14 @@ static void focus_screen(screen_t *s)
 
         if (s->current_client)
                 focus(s->current_client);
+}
+
+static void unfocus_screen(screen_t *s)
+{
+        if ((0 == s && 0 == (s = current_screen)) || 0 == s->current_client)
+                return;
+
+        unfocus(s->current_client);
 }
 
 static void unmanage(client_t *c)
@@ -818,8 +832,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         ASSERT(s);
 
         if ((cur = s->current_client)) {
-                set_default_window_border(cur->win);
-                grab_buttons(cur->win, 0);
+                unfocus(cur);
         }
 
         push_front(c);
@@ -947,7 +960,7 @@ static int update_screens()
                 for (; ps; ptmp = ps->next, free(ps), ps = ptmp) {
                         if (ps == current_screen) {
                                 if ((cur = ps->current_client)) {
-                                        set_default_window_border(cur->win);
+                                        unfocus(cur);
                                         reset_focus();
                                 }
                         }
@@ -1179,8 +1192,7 @@ static int focus_next_monitor()
                 return 0;
 
         if ((cur = current_screen->current_client)) {
-                set_default_window_border(cur->win);
-                grab_buttons(cur->win, 0);
+                unfocus(cur);
                 reset_focus();
         }
 
@@ -1214,8 +1226,7 @@ static int focus_prev_monitor()
                 return 0;
 
         if ((cur = current_screen->current_client)) {
-                set_default_window_border(cur->win);
-                grab_buttons(cur->win, 0);
+                unfocus(cur);
                 reset_focus();
         }
 
