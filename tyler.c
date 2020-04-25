@@ -47,7 +47,9 @@
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
+        | StructureNotifyMask                   \
         | ButtonPressMask                       \
+        | PointerMotionMask                     \
         | PropertyChangeMask)
 
 #define CLIENTMASK (0                           \
@@ -697,18 +699,17 @@ static void stack(screen_t *s)
                 pws = malloc(n * sizeof *pws);
         }
 
-        cur = s->current_client;
-        ASSERT(cur);
-
-        if (is_ffft(cur)) {
-                if (cur->state[cur->current_state].fullscreen) {
-                        pws[j++] = cur->win;
+        if ((cur = s->current_client)) {
+                if (is_ffft(cur)) {
+                        if (cur->state[cur->current_state].fullscreen) {
+                                pws[j++] = cur->win;
+                        } else {
+                                pws[i++] = cur->win;
+                        }
                 } else {
-                        pws[i++] = cur->win;
+                        pws[j++] = cur->win;
+                        ++k;
                 }
-        } else {
-                pws[j++] = cur->win;
-                ++k;
         }
 
         for (c = s->client_head; c; c = c->next) {
@@ -728,7 +729,7 @@ static void stack(screen_t *s)
                 }
         }
 
-        XRestackWindows(DPY, pws, n);
+        if (n) XRestackWindows(DPY, pws, n);
 
         if (pws != ws)
                 free(pws);
@@ -759,17 +760,16 @@ static void focus(client_t *c)
         if (0 == c && 0 == (c = stack_top(current_screen)))
                 return;
 
-        if (!is_visible(c) && !is_visible((c = stack_top(c->screen))))
-                return;
+        if (!is_visible(c))
+                if (0 == (c = stack_top(c->screen)) || !is_visible(c))
+                        return;
 
         if (c->screen != current_screen) {
                 if ((cur = current_screen->current_client)) {
                         unfocus(cur);
                 }
         } else {
-                if (c != (cur = c->screen->current_client)) {
-                        ASSERT(cur);
-
+                if ((cur = c->screen->current_client) && c != cur) {
                         unfocus(cur);
 
                         stack_pop(c);
@@ -885,7 +885,8 @@ static void free_screens()
         for (; s; snext = s->next, free(s), s = snext) {
                 c = s->client_head;
                 for (; c; cnext = c->next, free(c), c = cnext)
-                        ;
+                        if (!send(c->win, WM_DELETE_WINDOW))
+                                zap_window(c->win);
         }
 }
 
@@ -968,8 +969,10 @@ static int update_screens()
 
                         head = ps->client_head;
 
-                        for (c = head; c; c = c->next)
+                        for (c = head; c; c = c->next) {
                                 c->screen = ps;
+                                c->state[c->current_state].tags = ps->tags;
+                        }
 
                         if (head) {
                                 push_back(head);
@@ -1577,6 +1580,45 @@ static int button_press_handler(XEvent *arg)
         return do_button_press_handler(ev->button, CLEANMASK(mod));
 }
 
+static int test_point_in(rect_t *r, int x, int y)
+{
+        return r->x <= x && x < r->x + r->w && r->y <= y && y < r->y + r->h;
+}
+
+static screen_t *screen_at(int x, int y)
+{
+        screen_t *s;
+
+        if (test_point_in (&current_screen->r, x, y))
+                return current_screen;
+
+        for (s = screen_head; s && !test_point_in(&s->r, x, y); s = s->next)
+                ;
+
+        return s;
+}
+
+static int motion_notify_handler(XEvent *arg)
+{
+        screen_t *s;
+
+        XMotionEvent *ev = &arg->xmotion;
+        int x = ev->x_root, y = ev->y_root;
+
+        if (ROOT == ev->window) {
+                s = screen_at(x, y);
+                ASSERT(s);
+
+                if (s && s != current_screen) {
+                        unfocus_screen(current_screen);
+                        reset_focus();
+                        focus_screen((current_screen = s));
+                }
+        }
+
+        return 0;
+}
+
 static int enter_notify_handler(XEvent *arg)
 {
         client_t *c;
@@ -1680,7 +1722,8 @@ static int handle_event(XEvent *arg)
                 key_press_handler, /* 2 */
                 0,
                 button_press_handler, /* 4 */
-                0, 0,
+                0,
+                motion_notify_handler, /* 6 */
                 enter_notify_handler, /* 7 */
                 0,
                 focus_in_handler, /* 9 */
