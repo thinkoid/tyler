@@ -161,6 +161,11 @@ static int is_tile(client_t *c)
         return !is_ffft(c);
 }
 
+static int is_tileable(client_t *c)
+{
+        return !is_fixed(c) && !is_transient(c);
+}
+
 static int is_resizeable(client_t *c)
 {
         return !is_fullscreen(c) && !is_fixed(c);
@@ -1493,6 +1498,29 @@ TAG_DEF(8)
 TAG_DEF(9)
 #undef TAG_DEF
 
+static int tile_current()
+{
+        state_t *state;
+        client_t *cur;
+
+        if (0 == current_screen || 0 == current_screen->current_client)
+                return 0;
+
+        cur = current_screen->current_client;
+
+        if (is_tileable(cur)) {
+                state = &cur->state[cur->current_state];
+                state->floating = state->fullscreen = 0;
+
+                focus_screen(current_screen);
+
+                tile(current_screen);
+                stack(current_screen);
+        }
+
+        return 0;
+}
+
 /**********************************************************************/
 
 typedef struct keycmd {
@@ -1518,6 +1546,7 @@ static keycmd_t g_keycmds[] = {
         { MODKEY | ShiftMask,   XK_comma,   move_next_monitor  },
         { MODKEY | ShiftMask,   XK_period,  move_prev_monitor  },
         { MODKEY | ShiftMask,   XK_q,       quit               },
+        { MODKEY,               XK_t,       tile_current       },
 
 #define TAG_DEF(x) { MODKEY, WM_CAT(XK_, x), WM_CAT(tag_, x) }
         TAG_DEF(1), TAG_DEF(2), TAG_DEF(3), TAG_DEF(4), TAG_DEF(5),
