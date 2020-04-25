@@ -1450,7 +1450,7 @@ static void unmap_all()
         for (c = current_screen->client_head; c; c = c->next)
                 if (is_visible(c)) XUnmapWindow(DPY, c->win);
 
-        resume_propagate(ROOT, SubstructureNotifyMask);
+        resume_propagate(ROOT, ROOTMASK);
 }
 
 static void map_all()
