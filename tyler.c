@@ -405,7 +405,7 @@ static screen_t *make_screen(int i, rect_t *r)
         s->r.w = r->w;
         s->r.h = r->h;
 
-        s->tags = 1U << (i + 1);
+        s->tags = 1U << i;
 
         s->showbar = config_showbar();
         s->bh = config_bar_height();
@@ -1477,7 +1477,7 @@ static int tag(int n)
         return 0;
 }
 
-#define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(x); }
+#define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(x - 1); }
 TAG_DEF(1)
 TAG_DEF(2)
 TAG_DEF(3)
