@@ -395,7 +395,7 @@ static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
         }
 }
 
-static screen_t *make_screen(int i, rect_t *r)
+static screen_t *make_screen(rect_t *r)
 {
         screen_t *s = malloc(sizeof *s);
         memset(s, 0, sizeof *s);
@@ -405,7 +405,7 @@ static screen_t *make_screen(int i, rect_t *r)
         s->r.w = r->w;
         s->r.h = r->h;
 
-        s->tags = 1U << i;
+        s->tags = 1;
 
         s->showbar = config_showbar();
         s->bh = config_bar_height();
@@ -865,7 +865,7 @@ static void make_screens()
         ASSERT(prs);
 
         for (i = 0; i < n; ++i) {
-                *pptr = make_screen(i, prs + i);
+                *pptr = make_screen(prs + i);
                 pptr = &(*pptr)->next;
         }
 
@@ -942,7 +942,7 @@ static int update_screens()
                  * If there are more geometries than screens, create one screen
                  * for each remaining ones:
                  */
-                *pps = make_screen(i, prs + i);
+                *pps = make_screen(prs + i);
         }
 
         if (*pps) {
