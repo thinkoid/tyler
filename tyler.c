@@ -1051,6 +1051,43 @@ static void setup_sigchld()
 
 /**********************************************************************/
 
+
+static int get_root_pointer_coordinates(int *x, int *y)
+{
+        int i;
+        unsigned u;
+        Window w;
+
+        return XQueryPointer(DPY, ROOT, &w, &w, x, y, &i, &i, &u);
+}
+
+static int grab_pointer(cursor_t cursor)
+{
+        return GrabSuccess == XGrabPointer(
+                DPY, ROOT, False, POINTERMASK, GrabModeAsync, GrabModeAsync,
+                None, cursor, CurrentTime);
+}
+
+static void ungrab_pointer()
+{
+        XUngrabPointer(DPY, CurrentTime);
+}
+
+static void snap(rect_t *r, int *x, int *y, int w, int h, int snap)
+{
+        if (abs(r->x - *x) < snap)
+                *x = r->x;
+        else if (abs((r->x + r->w) - (*x + w)) < snap)
+                *x = r->x + r->w - w;
+
+        if (abs(r->y - *y) < snap)
+                *y = r->y;
+        else if (abs((r->y + r->h) - (*y + h)) < snap)
+                *y = r->y + r->h - h;
+}
+
+/**********************************************************************/
+
 static int zoom()
 {
         client_t *c, *cur;
@@ -1267,41 +1304,7 @@ static int quit()
         return g_running = 0;
 }
 
-static int get_root_pointer_coordinates(int *x, int *y)
-{
-        int i;
-        unsigned u;
-        Window w;
-
-        return XQueryPointer(DPY, ROOT, &w, &w, x, y, &i, &i, &u);
-}
-
-static int grab_pointer(cursor_t cursor)
-{
-        return GrabSuccess == XGrabPointer(
-                DPY, ROOT, False, POINTERMASK, GrabModeAsync, GrabModeAsync,
-                None, cursor, CurrentTime);
-}
-
-static void ungrab_pointer()
-{
-        XUngrabPointer(DPY, CurrentTime);
-}
-
 static int handle_event(XEvent *arg);
-
-static void snap(rect_t *r, int *x, int *y, int w, int h, int snap)
-{
-        if (abs(r->x - *x) < snap)
-                *x = r->x;
-        else if (abs((r->x + r->w) - (*x + w)) < snap)
-                *x = r->x + r->w - w;
-
-        if (abs(r->y - *y) < snap)
-                *y = r->y;
-        else if (abs((r->y + r->h) - (*y + h)) < snap)
-                *y = r->y + r->h - h;
-}
 
 static int do_move_client(client_t *c)
 {
@@ -1569,6 +1572,69 @@ static ptrcmd_t g_ptrcmds[] = { { MODKEY, Button1, move_client },
 
 /**********************************************************************/
 
+static int test_point_in(rect_t *r, int x, int y)
+{
+        return r->x <= x && x < r->x + r->w && r->y <= y && y < r->y + r->h;
+}
+
+static screen_t *screen_at(int x, int y)
+{
+        screen_t *s;
+
+        if (test_point_in (&current_screen->r, x, y))
+                return current_screen;
+
+        for (s = screen_head; s && !test_point_in(&s->r, x, y); s = s->next)
+                ;
+
+        return s;
+}
+
+static void exit_fullscreen(client_t *c)
+{
+        state_t *state;
+
+        c->current_state = (c->current_state + 1) % 2;
+        state = &c->state[c->current_state];
+
+        reset_fullscreen_property(c->win);
+        state->fullscreen = 0;
+
+        move_resize_client(c, 0);
+
+        tile(c->screen);
+        stack(c->screen);
+}
+
+static void enter_fullscreen(client_t *c)
+{
+        state_t *src, *dst;
+
+        src = &c->state[c->current_state];
+        dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
+        memcpy(dst, src, sizeof *src);
+
+        set_fullscreen_property(c->win);
+
+        dst->fullscreen = dst->floating = 1;
+        memcpy(&dst->g.r, &c->screen->r, sizeof(rect_t));
+        dst->g.bw = 0;
+
+        move_resize_client(c, 0);
+
+        focus(c);
+
+        tile(c->screen);
+        stack(c->screen);
+}
+
+static void mark_urgent(client_t *c)
+{
+        state_of(c)->urgent = 1;
+}
+
+/**********************************************************************/
+
 static int do_key_press_handler(KeySym keysym, unsigned mod)
 {
         keycmd_t *p = g_keycmds, *pend = g_keycmds + SIZEOF(g_keycmds);
@@ -1610,24 +1676,6 @@ static int button_press_handler(XEvent *arg)
         XButtonEvent *ev = &arg->xbutton;
         unsigned mod = CLEANMASK(ev->state);
         return do_button_press_handler(ev->button, CLEANMASK(mod));
-}
-
-static int test_point_in(rect_t *r, int x, int y)
-{
-        return r->x <= x && x < r->x + r->w && r->y <= y && y < r->y + r->h;
-}
-
-static screen_t *screen_at(int x, int y)
-{
-        screen_t *s;
-
-        if (test_point_in (&current_screen->r, x, y))
-                return current_screen;
-
-        for (s = screen_head; s && !test_point_in(&s->r, x, y); s = s->next)
-                ;
-
-        return s;
 }
 
 static int motion_notify_handler(XEvent *arg)
@@ -1781,49 +1829,6 @@ static int property_notify_handler(XEvent *arg)
         }
 
         return 0;
-}
-
-static void exit_fullscreen(client_t *c)
-{
-        state_t *state;
-
-        c->current_state = (c->current_state + 1) % 2;
-        state = &c->state[c->current_state];
-
-        reset_fullscreen_property(c->win);
-        state->fullscreen = 0;
-
-        move_resize_client(c, 0);
-
-        tile(c->screen);
-        stack(c->screen);
-}
-
-static void enter_fullscreen(client_t *c)
-{
-        state_t *src, *dst;
-
-        src = &c->state[c->current_state];
-        dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
-        memcpy(dst, src, sizeof *src);
-
-        set_fullscreen_property(c->win);
-
-        dst->fullscreen = dst->floating = 1;
-        memcpy(&dst->g.r, &c->screen->r, sizeof(rect_t));
-        dst->g.bw = 0;
-
-        move_resize_client(c, 0);
-
-        focus(c);
-
-        tile(c->screen);
-        stack(c->screen);
-}
-
-static void mark_urgent(client_t *c)
-{
-        state_of(c)->urgent = 1;
 }
 
 static int client_message_handler(XEvent *arg)
