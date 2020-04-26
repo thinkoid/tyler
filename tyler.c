@@ -143,6 +143,7 @@ IS_TRAIT_DEF(fixed)
 IS_TRAIT_DEF(fullscreen)
 IS_TRAIT_DEF(floating)
 IS_TRAIT_DEF(transient)
+IS_TRAIT_DEF(urgent)
 
 #undef IS_TRAIT_DEF
 
@@ -253,7 +254,9 @@ static size_t count_visible_tiles(screen_t *s)
 static void move_resize_client(client_t *c, rect_t *r)
 {
         geom_t *g = &state_of(c)->g;
-        memcpy(&g->r, r, sizeof *r);
+
+        if (r && r != &g->r)
+                memcpy(&g->r, r, sizeof *r);
 
         XMoveResizeWindow(DPY, c->win,
                           g->r.x,
@@ -1752,9 +1755,74 @@ static int property_notify_handler(XEvent *arg)
         return 0;
 }
 
+static void exit_fullscreen(client_t *c)
+{
+        state_t *state;
+
+        c->current_state = (c->current_state + 1) % 2;
+        state = &c->state[c->current_state];
+
+        reset_fullscreen_property(c->win);
+        state->fullscreen = 0;
+
+        move_resize_client(c, 0);
+
+        tile(c->screen);
+        stack(c->screen);
+}
+
+static void enter_fullscreen(client_t *c)
+{
+        state_t *src, *dst;
+
+        src = &c->state[c->current_state];
+        dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
+        memcpy(dst, src, sizeof *src);
+
+        set_fullscreen_property(c->win);
+
+        dst->fullscreen = dst->floating = 1;
+        memcpy(&dst->g.r, &c->screen->r, sizeof(rect_t));
+        dst->g.bw = 0;
+
+        move_resize_client(c, 0);
+
+        focus(c);
+
+        tile(c->screen);
+        stack(c->screen);
+}
+
+static void mark_urgent(client_t *c)
+{
+        state_of(c)->urgent = 1;
+}
+
 static int client_message_handler(XEvent *arg)
 {
-        UNUSED(arg);
+        XClientMessageEvent *ev = &arg->xclient;
+
+        client_t *c = client_for(ev->window);
+
+        if (0 == c)
+                return 0;
+
+        if (NET_WM_STATE == ev->message_type) {
+                if (NET_WM_STATE_FULLSCREEN == (Atom)ev->data.l[1] ||
+                    NET_WM_STATE_FULLSCREEN == (Atom)ev->data.l[2]) {
+                        if (is_fullscreen(c)) {
+                                if (2 == ev->data.l[0])
+                                        exit_fullscreen(c);
+                        } else {
+                                if (3 & ev->data.l[0])
+                                        enter_fullscreen(c);
+                        }
+                }
+        } else if (NET_ACTIVE_WINDOW == ev->message_type) {
+                if (c != current_screen->current_client && !is_urgent(c))
+                        mark_urgent(c);
+        }
+
         return 0;
 }
 
