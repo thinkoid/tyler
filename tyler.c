@@ -1751,7 +1751,35 @@ static int configure_notify_handler(XEvent *arg)
 
 static int property_notify_handler(XEvent *arg)
 {
-        UNUSED(arg);
+        client_t *c;
+        XPropertyEvent *ev = &arg->xproperty;
+
+        if (PropertyDelete == ev->state)
+                return 0;
+
+        if ((c = client_for(ev->window))) {
+                switch(ev->atom) {
+                case XA_WM_TRANSIENT_FOR:
+                        if (!is_floating(c) && transient_client_for(c->win)) {
+                                state_of(c)->floating = 1;
+
+                                tile(c->screen);
+                                stack(c->screen);
+                        }
+                        break;
+
+                case XA_WM_NORMAL_HINTS:
+                        update_client_size_hints(c);
+                        break;
+
+                case XA_WM_HINTS:
+                        update_client_wm_hints(c);
+                        break;
+                default:
+                        break;
+                }
+        }
+
         return 0;
 }
 
