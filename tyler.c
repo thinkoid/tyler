@@ -1731,11 +1731,18 @@ static int enter_notify_handler(XEvent *arg)
         if (ev->mode != NotifyNormal || ev->detail == NotifyInferior)
                 return 0;
 
-        if (0 == (c = client_for(ev->window)) || c == c->screen->current_client)
+        if (0 == (c = client_for(ev->window)))
                 return 0;
 
-        focus(c);
-        stack(c->screen);
+        if (c->screen != current_screen) {
+                unfocus_screen(current_screen);
+                current_screen = c->screen;
+        }
+
+        if (c != current_screen->current_client)
+                focus(c);
+
+        stack(current_screen);
 
         return 0;
 }
