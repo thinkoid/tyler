@@ -29,7 +29,7 @@
 #define BUTTONMASK (ButtonPressMask | ButtonReleaseMask)
 #define POINTERMASK (PointerMotionMask | BUTTONMASK)
 
-#define MODKEY Mod4Mask
+#define MODKEY Mod1Mask
 
 #define LOCKMASK (g_numlockmask | LockMask)
 #define ALLMODMASK (Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask)

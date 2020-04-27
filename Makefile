@@ -17,7 +17,7 @@ WARNINGS =										\
 	-Wno-unused-function						\
 	-Wno-deprecated-declarations
 
-CFLAGS = -g -O -std=c89 -W -Wall $(WARNINGS)
+CFLAGS = -g -O3 -std=c89 -W -Wall $(WARNINGS)
 
 CPPFLAGS  = -DXINERAMA -DVERSION=$(VERSION) \
 	-I. $(X11_CPPFLAGS) $(FT2_CPPFLAGS) $(PANGO_CPPFLAGS)
