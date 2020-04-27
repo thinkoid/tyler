@@ -1127,7 +1127,7 @@ static int spawn(char **args)
                 setsid();
                 execvp(args[0], args);
 
-                fprintf(stderr, "dwm: execvp %s", args[0]);
+                fprintf(stderr, "tyler: execvp %s", args[0]);
                 perror(" failed");
 
                 exit(0);
