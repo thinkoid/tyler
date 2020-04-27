@@ -8,6 +8,8 @@
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 
+const char *config_fontname();
+
 const char **config_colors();
 size_t config_colors_size();
 

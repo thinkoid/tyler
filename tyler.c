@@ -1145,6 +1145,33 @@ static int spawn_terminal()
         return spawn((char **)config_termcmd());
 }
 
+static int current_screen_ordinal()
+{
+        int i = 0;
+        screen_t *s = screen_head;
+
+        for (; s && s != current_screen; s = s->next, ++i)
+                ;
+
+        return i;
+}
+
+static int spawn_program()
+{
+        char ordinal[16] = "0";
+
+        static const char *cmd[] = {
+                "dmenu_run", "-m", 0, "-fn", 0, 0
+        };
+
+        sprintf(ordinal, "%d", current_screen_ordinal());
+        cmd[2] = ordinal;
+
+        cmd[4] = config_fontname();
+
+        return spawn((char **)cmd);
+}
+
 static int toggle_bar()
 {
         return 0;
@@ -1539,6 +1566,7 @@ static keycmd_t g_keycmds[] = {
         /* clang-format off */
         { MODKEY,               XK_Return,  zoom               },
         { MODKEY | ShiftMask,   XK_Return,  spawn_terminal     },
+        { MODKEY,               XK_p,       spawn_program      },
         { MODKEY,               XK_b,       toggle_bar         },
         { MODKEY | ShiftMask,   XK_Left,    move_focus_left    },
         { MODKEY | ShiftMask,   XK_Right,   move_focus_right   },

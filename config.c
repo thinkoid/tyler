@@ -11,6 +11,8 @@ static int g_bar_height   = 18;
 static int   g_master_size  = 1;
 static float g_master_ratio = .5f;
 
+static const char *g_fontname = "Fira Code Retina:size=10";
+
 static const char *g_colors[] = {
         "#444444", "#222222", "#BBBBBB", "#93a660", "#334600", "#EEEEEE"
 };
@@ -25,6 +27,11 @@ static const char *g_termcmd[] = {
 
 static int g_snap = 5;
 /* clang-format on */
+
+const char *config_fontname()
+{
+        return g_fontname;
+}
 
 const char **config_colors()
 {
