@@ -765,27 +765,23 @@ static void focus(client_t *c)
 {
         client_t *cur;
 
-        if (0 == c && 0 == (c = stack_top(current_screen)))
+        if ((0 == c || !is_visible(c)) && 0 == (c = stack_top(current_screen)))
                 return;
-
-        if (!is_visible(c))
-                if (0 == (c = stack_top(c->screen)) || !is_visible(c))
-                        return;
 
         if (c->screen != current_screen) {
                 if ((cur = current_screen->current_client)) {
                         unfocus(cur);
                 }
         } else {
-                if ((cur = c->screen->current_client) && c != cur) {
+                if ((cur = c->screen->current_client) && c != cur)
                         unfocus(cur);
 
-                        stack_pop(c);
-                        stack_push_front(c);
-                }
+                stack_pop(c);
+                stack_push_front(c);
 
                 set_select_window_border(c->win);
                 set_client_focus(c);
+
                 grab_buttons(c->win, 1);
         }
 }
