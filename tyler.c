@@ -79,8 +79,8 @@ static unsigned g_numlockmask /* = 0 */;
 
 typedef struct state {
         geom_t g;
-        unsigned fixed : 1, floating : 1, transient : 1, urgent : 1, noinput : 1,
-                fullscreen : 1;
+        unsigned floating : 1, fullscreen : 1, transient : 1, urgent : 1,
+                noinput : 1;
         unsigned tags;
 } state_t;
 
@@ -139,37 +139,35 @@ static state_t *state_of(client_t *c)
                 return state_of(c)->x;                  \
         }
 
-IS_TRAIT_DEF(fixed)
-IS_TRAIT_DEF(fullscreen)
 IS_TRAIT_DEF(floating)
+IS_TRAIT_DEF(fullscreen)
 IS_TRAIT_DEF(transient)
 IS_TRAIT_DEF(urgent)
 
 #undef IS_TRAIT_DEF
 
-static int is_ffft(client_t *c)
+static int is_fft(client_t *c)
 {
         state_t *state = state_of(c);
         return !!(0
-                  | state->fixed
                   | state->floating
-                  | state->transient
-                  | state->fullscreen);
+                  | state->fullscreen
+                  | state->transient);
 }
 
 static int is_tile(client_t *c)
 {
-        return !is_ffft(c);
+        return !is_fft(c);
 }
 
 static int is_tileable(client_t *c)
 {
-        return !is_fixed(c) && !is_transient(c);
+        return !is_fullscreen(c) && !is_transient(c);
 }
 
 static int is_resizeable(client_t *c)
 {
-        return !is_fullscreen(c) && !is_fixed(c);
+        return !is_fullscreen(c) && !is_transient(c);
 }
 
 static int is_visible(client_t *c)
@@ -503,9 +501,6 @@ static void update_client_size_hints(client_t *c)
 
         h->max.w = x.max_width;
         h->max.h = x.max_height;
-
-        state_of(c)->fixed = h->max.w && h->max.h && h->min.w && h->min.h &&
-                h->max.w == h->min.w && h->max.h == h->min.h;
 }
 
 static void update_client_wm_hints(client_t *c)
@@ -567,8 +562,9 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
         update_client_size_hints(c);
         update_client_wm_hints(c);
 
+        /* TODO : resize if fullscreen */
         state->fullscreen = has_fullscreen_property(c->win);
-        state->floating = state->transient || state->fixed;
+        state->floating = state->transient;
 
         return c;
 }
@@ -689,7 +685,7 @@ static void restack(screen_t *s)
                 if (is_visible(c)) {
                         ++n;
 
-                        if (is_ffft(c)) {
+                        if (is_fft(c)) {
                                 ++k;
 
                                 if (!state_of(c)->fullscreen)
@@ -706,7 +702,7 @@ static void restack(screen_t *s)
         }
 
         if ((cur = s->current_client)) {
-                if (is_ffft(cur)) {
+                if (is_fft(cur)) {
                         if (cur->state[cur->current_state].fullscreen) {
                                 pws[j++] = cur->win;
                         } else {
@@ -724,7 +720,7 @@ static void restack(screen_t *s)
 
                 /* set_default_window_border(c); */
 
-                if (is_ffft(c)) {
+                if (is_fft(c)) {
                         if (state_of(c)->fullscreen) {
                                 pws[j++] = c->win;
                         } else {
