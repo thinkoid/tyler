@@ -504,8 +504,8 @@ static void update_client_size_hints(client_t *c)
         h->max.w = x.max_width;
         h->max.h = x.max_height;
 
-        state_of(c)->fixed = h->max.w && h->max.h && h->max.w == h->min.w &&
-                h->max.h == h->min.h;
+        state_of(c)->fixed = h->max.w && h->max.h && h->min.w && h->min.h &&
+                h->max.w == h->min.w && h->max.h == h->min.h;
 }
 
 static void update_client_wm_hints(client_t *c)
