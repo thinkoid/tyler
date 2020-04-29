@@ -863,18 +863,6 @@ static void free_screens()
         }
 }
 
-static int compare_screens(rect_t *rs, size_t n)
-{
-        size_t i = 0;
-        screen_t *s = screen_head;
-
-        for (; i < n && s; ++i, s = s->next)
-                if (memcmp (rs + i, &s->r, sizeof *rs))
-                        return 1;
-
-        return !(i == n && 0 == s);
-}
-
 static int update_screen(screen_t *s, rect_t *r)
 {
         if (memcmp(r, &s->r, sizeof *r)) {
