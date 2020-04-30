@@ -1258,12 +1258,12 @@ static int focus_prev_monitor()
         return 0;
 }
 
-static int move_next_monitor()
+static int move_next_screen()
 {
         return 0;
 }
 
-static int move_prev_monitor()
+static int move_prev_screen()
 {
         return 0;
 }
@@ -1523,8 +1523,8 @@ static keycmd_t g_keycmds[] = {
         { MODKEY | ShiftMask,   XK_c,       zap                },
         { MODKEY,               XK_comma,   focus_next_monitor },
         { MODKEY,               XK_period,  focus_prev_monitor },
-        { MODKEY | ShiftMask,   XK_comma,   move_next_monitor  },
-        { MODKEY | ShiftMask,   XK_period,  move_prev_monitor  },
+        { MODKEY | ShiftMask,   XK_comma,   move_next_screen   },
+        { MODKEY | ShiftMask,   XK_period,  move_prev_screen   },
         { MODKEY | ShiftMask,   XK_q,       quit               },
         { MODKEY,               XK_t,       tile_current       },
 
