@@ -610,6 +610,9 @@ static void unmap_all(int visible)
         resume_propagate(ROOT, ROOTMASK);
 }
 
+static void unmap_visible() { return unmap_all(1); }
+static void unmap_invisible() { return unmap_all(0); }
+
 static void map_visible()
 {
         client_t *c;
@@ -956,7 +959,7 @@ static int update_screens()
 
         current_screen->current_client = stack_top(current_screen);
 
-        unmap_all(0);
+        unmap_invisible();
         map_visible();
 
         tile(current_screen);
@@ -1446,7 +1449,7 @@ static int tag(int n)
 {
         if ((1U << n) != current_screen->tags) {
                 unfocus(current_screen->current_client);
-                unmap_all(1);
+                unmap_visible();
 
                 current_screen->tags = 1U << n;
                 map_visible();
