@@ -1453,8 +1453,8 @@ static int tag(int n)
 
                 current_screen->current_client = stack_top(current_screen);
 
-                /* tile(current_screen); */
-                /* restack(current_screen); */
+                tile(current_screen);
+                restack(current_screen);
 
                 focus(current_screen->current_client);
 
