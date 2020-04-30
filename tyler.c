@@ -597,6 +597,28 @@ static client_t *last_visible_client(client_t *p, client_t *pend)
         return c;
 }
 
+static void unmap_all(int visible)
+{
+        client_t *c;
+
+        pause_propagate(ROOT, SubstructureNotifyMask);
+
+        for (c = current_screen->client_head; c; c = c->next)
+                if (visible == (is_visible(c)))
+                        XUnmapWindow(DPY, c->win);
+
+        resume_propagate(ROOT, ROOTMASK);
+}
+
+static void map_visible()
+{
+        client_t *c;
+
+        for (c = current_screen->client_head; c; c = c->next)
+                if (is_visible(c))
+                        XMapWindow(DPY, c->win);
+}
+
 static void push_front(client_t *c)
 {
         c->next = c->screen->client_head;
@@ -878,7 +900,7 @@ static int update_screen(screen_t *s, rect_t *r)
 static int update_screens()
 {
         screen_t **pps = &screen_head, *ptmp, *ps = *pps, *pscur = 0;
-        client_t *head, *c;
+        client_t *c;
 
         rect_t rs[16], *prs = rs;
         size_t i, n = SIZEOF(rs);
@@ -919,27 +941,23 @@ static int update_screens()
                 *pps = 0;
 
                 for (; ps; ptmp = ps->next, free(ps), ps = ptmp) {
-                        if (ps == current_screen) {
-                                unfocus(ps->current_client);
-                                reset_focus();
-                        }
+                        unfocus(ps->current_client);
 
-                        head = ps->client_head;
+                        for (c = ps->client_head; c; c = c->next)
+                                c->screen = pscur;
 
-                        for (c = head; c; c = c->next) {
-                                c->screen = ps;
-                                c->state[c->current_state].tags = ps->tags;
-                        }
-
-                        if (head) {
-                                push_back(head);
-                                stack_push_back(head);
-                        }
+                        push_back(ps->client_head);
+                        stack_push_back(ps->focus_head);
                 }
         }
 
         current_screen = pscur;
         ASSERT(current_screen);
+
+        current_screen->current_client = stack_top(current_screen);
+
+        unmap_all(0);
+        map_visible();
 
         tile(current_screen);
         restack(current_screen);
@@ -1424,35 +1442,14 @@ static int resize_client()
         return 0;
 }
 
-static void unmap_visible()
-{
-        client_t *c;
-
-        pause_propagate(ROOT, SubstructureNotifyMask);
-
-        for (c = current_screen->client_head; c; c = c->next)
-                if (is_visible(c))
-                        XUnmapWindow(DPY, c->win);
-
-        resume_propagate(ROOT, ROOTMASK);
-}
-
-static void map_visible()
-{
-        client_t *c;
-
-        for (c = current_screen->client_head; c; c = c->next)
-                if (is_visible(c))
-                        XMapWindow(DPY, c->win);
-}
-
 static int tag(int n)
 {
         if ((1U << n) != current_screen->tags) {
-                unmap_visible(current_screen);
+                unfocus(current_screen->current_client);
+                unmap_all(1);
 
                 current_screen->tags = 1U << n;
-                map_visible(current_screen);
+                map_visible();
 
                 current_screen->current_client = stack_top(current_screen);
 
