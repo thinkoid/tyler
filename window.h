@@ -26,8 +26,8 @@ Window focused_window();
 int has_focus(Window win);
 void send_focus(Window win);
 
-void reset_focus();
-void set_focus(Window win);
+void reset_focus_property();
+void set_focus_property(Window win);
 
 void reset_urgent(Window);
 void set_urgent(Window);

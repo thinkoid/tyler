@@ -95,13 +95,13 @@ void send_focus(Window win)
         send(win, WM_TAKE_FOCUS);
 }
 
-void reset_focus()
+void reset_focus_property()
 {
         XSetInputFocus(DPY, ROOT, RevertToPointerRoot, CurrentTime);
         XDeleteProperty(DPY, ROOT, NET_ACTIVE_WINDOW);
 }
 
-void set_focus(Window win)
+void set_focus_property(Window win)
 {
         XSetInputFocus(DPY, win, RevertToPointerRoot, CurrentTime);
         XChangeProperty(DPY, ROOT, NET_ACTIVE_WINDOW, XA_WINDOW, 32,

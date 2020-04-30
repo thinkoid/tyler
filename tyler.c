@@ -740,7 +740,7 @@ static void set_client_focus(client_t *c)
         ASSERT(c);
 
         if (!state_of(c)->noinput)
-                set_focus(c->win);
+                set_focus_property(c->win);
 
         send_focus(c->win);
 }
@@ -1225,7 +1225,7 @@ static int focus_next_monitor()
                 return 0;
 
         unfocus(current_screen->current_client);
-        reset_focus();
+        reset_focus_property();
 
         focus((current_screen = s)->current_client);
 
@@ -1251,7 +1251,7 @@ static int focus_prev_monitor()
                 return 0;
 
         unfocus(current_screen->current_client);
-        reset_focus();
+        reset_focus_property();
 
         focus((current_screen = s)->current_client);
 
@@ -1460,6 +1460,9 @@ static int tag(int n)
                 /* restack(current_screen); */
 
                 focus(current_screen->current_client);
+
+                if (0 == current_screen->current_client)
+                        reset_focus_property();
         }
 
         return 0;
