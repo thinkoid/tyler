@@ -79,7 +79,7 @@ static unsigned g_numlockmask /* = 0 */;
 
 typedef struct state {
         geom_t g;
-        unsigned floating : 1, fullscreen : 1, transient : 1, urgent : 1,
+        unsigned fixed : 1, floating : 1, fullscreen : 1, transient : 1, urgent : 1,
                 noinput : 1;
         unsigned tags;
 } state_t;
@@ -487,20 +487,31 @@ static void update_client_size_hints(client_t *c)
 
         fill_size_hints_defaults(&x);
 
-        h->aspect.min = x.min_aspect.x ? (float)x.min_aspect.y / x.min_aspect.x : 0;
-        h->aspect.max = x.max_aspect.y ? (float)x.max_aspect.x / x.max_aspect.y : 0;
+        if (x.flags & PAspect) {
+                h->aspect.min = x.min_aspect.x
+                        ? (float)x.min_aspect.y / x.min_aspect.x : 0;
+                h->aspect.max = x.max_aspect.y
+                        ? (float)x.max_aspect.x / x.max_aspect.y : 0;
+        }
 
         h->base.w = x.base_width;
         h->base.h = x.base_height;
 
-        h->inc.w = x.width_inc;
-        h->inc.h = x.height_inc;
-
         h->min.w = x.min_width;
         h->min.h = x.min_height;
 
-        h->max.w = x.max_width;
-        h->max.h = x.max_height;
+        if (x.flags & PResizeInc) {
+                h->inc.w = x.width_inc;
+                h->inc.h = x.height_inc;
+        }
+
+        if (x.flags & PMaxSize) {
+                h->max.w = x.max_width;
+                h->max.h = x.max_height;
+        }
+
+        state_of(c)->fixed = h->max.w && h->max.h && h->max.w == h->min.w &&
+                h->max.h == h->min.h;
 }
 
 static void update_client_wm_hints(client_t *c)
@@ -564,7 +575,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
 
         /* TODO : resize if fullscreen */
         state->fullscreen = has_fullscreen_property(c->win);
-        state->floating = state->transient;
+        state->floating = state->transient || state->fixed;
 
         return c;
 }
@@ -839,9 +850,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         push_front(c);
         stack_push_front(c);
 
-        if (is_tile(c))
-                tile(s);
-
+        if (is_tile(c)) tile(s);
         restack(s);
 
         focus(c);
