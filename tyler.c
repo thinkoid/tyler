@@ -619,7 +619,6 @@ static void push_back(client_t *c)
         for (pptr = &c->screen->client_head; *pptr; pptr = &(*pptr)->next)
                 ;
 
-        c->next = *pptr;
         *pptr = c;
 }
 
@@ -630,7 +629,6 @@ static void stack_push_back(client_t *c)
         for (pptr = &c->screen->focus_head; *pptr; pptr = &(*pptr)->focus_next)
                 ;
 
-        c->focus_next = *pptr;
         *pptr = c;
 }
 
