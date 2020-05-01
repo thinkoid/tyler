@@ -1177,6 +1177,8 @@ static int move_focus_left()
                         c = last_visible_client(cur->next, 0);
 
                 if (c && c != cur) {
+                        unfocus(cur);
+
                         stack_pop(c);
                         stack_push_front(c);
 
@@ -1203,6 +1205,8 @@ static int move_focus_right()
                         c = first_visible_client(s->client_head, cur);
 
                 if (c && c != cur) {
+                        unfocus(cur);
+
                         stack_pop(c);
                         stack_push_front(c);
 
