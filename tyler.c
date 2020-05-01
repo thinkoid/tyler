@@ -1089,6 +1089,8 @@ static int zoom()
                 if (c == cur) {
                         c = first_visible_tile(c->next, 0);
                         if (c && c != cur) {
+                                unfocus(cur);
+
                                 pop(c);
                                 push_front(c);
 
