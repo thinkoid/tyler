@@ -1164,6 +1164,21 @@ static int toggle_bar()
         return 0;
 }
 
+static void move_focus(client_t *from, client_t *to)
+{
+        if (to && to != from) {
+                unfocus(from);
+
+                stack_pop(to);
+                stack_push_front(to);
+
+                tile(to->screen);
+                restack(to->screen);
+
+                focus(to);
+        }
+}
+
 static int move_focus_left()
 {
         screen_t *s;
@@ -1176,17 +1191,7 @@ static int move_focus_left()
                 if (0 == (c = last_visible_client(s->client_head, cur)))
                         c = last_visible_client(cur->next, 0);
 
-                if (c && c != cur) {
-                        unfocus(cur);
-
-                        stack_pop(c);
-                        stack_push_front(c);
-
-                        tile(s);
-                        restack(s);
-
-                        focus(c);
-                }
+                move_focus(cur, c);
         }
 
         return 0;
@@ -1204,17 +1209,7 @@ static int move_focus_right()
                 if (0 == (c = first_visible_client(cur->next, 0)))
                         c = first_visible_client(s->client_head, cur);
 
-                if (c && c != cur) {
-                        unfocus(cur);
-
-                        stack_pop(c);
-                        stack_push_front(c);
-
-                        tile(s);
-                        restack(s);
-
-                        focus(c);
-                }
+                move_focus(cur, c);
         }
 
         return 0;
