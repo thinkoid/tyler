@@ -814,20 +814,29 @@ static void focus(client_t *c)
 
 static void unmanage(client_t *c)
 {
-        screen_t *s = c->screen;
+        screen_t *s;
 
-        int was_current = (c == s->current_client);
+        ASSERT(c);
+        ASSERT(c->screen);
+
+        s = c->screen;
 
         pop(c);
         stack_pop(c);
 
-        if (is_tile(c))
+        if (is_tile(c) && is_visible(c))
                 tile(s);
 
         restack(s);
 
-        if (was_current)
-                focus(s->current_client);
+        if (is_visible(c) && c == s->current_client) {
+                s->current_client = stack_top(s);
+
+                if (s->current_client)
+                        focus(c->screen->current_client);
+                else
+                        reset_focus_property();
+        }
 
         free(c);
 }
