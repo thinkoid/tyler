@@ -1777,10 +1777,8 @@ static int configure_request_handler(XEvent *arg)
         if (XConfigureWindow(DPY, ev->window, ev->value_mask, &wc))
                 XSync(DPY, 0);
 
-        if ((c = client_for(ev->window))) {
+        if ((c = client_for(ev->window)))
                 tile(c->screen);
-                restack(c->screen);
-        }
 
         return 0;
 }
