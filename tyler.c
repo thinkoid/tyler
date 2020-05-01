@@ -608,7 +608,7 @@ static client_t *last_visible_client(client_t *p, client_t *pend)
         return c;
 }
 
-static void unmap_all(int visible)
+static void unmap(int visible)
 {
         client_t *c;
 
@@ -621,8 +621,8 @@ static void unmap_all(int visible)
         resume_propagate(ROOT, ROOTMASK);
 }
 
-static void unmap_visible() { return unmap_all(1); }
-static void unmap_invisible() { return unmap_all(0); }
+static void unmap_visible() { return unmap(1); }
+static void unmap_invisible() { return unmap(0); }
 
 static void map_visible()
 {
