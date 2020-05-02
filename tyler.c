@@ -451,7 +451,7 @@ static client_t *transient_client_for(Window win)
         return (other = transient_for_property(win)) ? client_for(other) : 0;
 }
 
-static void send_client_configuration(client_t *c)
+static void send_configure_notify(client_t *c)
 {
         state_t *state;
 
@@ -555,7 +555,7 @@ static client_t *make_client(Window win, XWindowAttributes *attr)
          * Set window border width, color, and send client geometry information:
          */
         set_default_window_border(win);
-        send_client_configuration(c);
+        send_configure_notify(c);
 
         /*
          * Transient property and the borrowing of tags from its parent should
@@ -1778,7 +1778,7 @@ static int configure_request_handler(XEvent *arg)
         if (XConfigureWindow(DPY, ev->window, ev->value_mask, &wc))
                 XSync(DPY, 0);
 
-        if ((c = client_for(ev->window)))
+        if ((c = client_for(ev->window)) && is_visible(c))
                 tile(c->screen);
 
         return 0;
