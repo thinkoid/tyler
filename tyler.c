@@ -1358,7 +1358,7 @@ static int do_move_client(client_t *c)
                                 restack(c->screen);
                         }
 
-                        XMoveResizeWindow(DPY, c->win, x, y, r->w, r->h);
+                        XMoveWindow(DPY, c->win, x, y);
                         break;
                 }
         } while (ev.type != ButtonRelease);
