@@ -33,16 +33,18 @@ static int default_error_handler(Display *dpy, XErrorEvent *ee)
 #define REQ(x) ((x)->request_code)
 #define ERR(x) ((x)->error_code)
 
-        if (ERR(ee) == BadWindow ||
-            (REQ(ee) == X_SetInputFocus && ERR(ee) == BadMatch) ||
-            (REQ(ee) == X_PolyText8 && ERR(ee) == BadDrawable) ||
+        /* clang-format off */
+        if ( ERR(ee) == BadWindow ||
+            (REQ(ee) == X_SetInputFocus     && ERR(ee) == BadMatch)    ||
+            (REQ(ee) == X_PolyText8         && ERR(ee) == BadDrawable) ||
             (REQ(ee) == X_PolyFillRectangle && ERR(ee) == BadDrawable) ||
-            (REQ(ee) == X_PolySegment && ERR(ee) == BadDrawable) ||
-            (REQ(ee) == X_ConfigureWindow && ERR(ee) == BadMatch) ||
-            (REQ(ee) == X_GrabButton && ERR(ee) == BadAccess) ||
-            (REQ(ee) == X_GrabKey && ERR(ee) == BadAccess) ||
-            (REQ(ee) == X_CopyArea && ERR(ee) == BadDrawable))
+            (REQ(ee) == X_PolySegment       && ERR(ee) == BadDrawable) ||
+            (REQ(ee) == X_ConfigureWindow   && ERR(ee) == BadMatch)    ||
+            (REQ(ee) == X_GrabButton        && ERR(ee) == BadAccess)   ||
+            (REQ(ee) == X_GrabKey           && ERR(ee) == BadAccess)   ||
+            (REQ(ee) == X_CopyArea          && ERR(ee) == BadDrawable))
                 return 0;
+        /* clang-format on */
 
         fprintf(stderr, "window manager fatal error : request = %d, error = %d\n",
                 REQ(ee), REQ(ee));
