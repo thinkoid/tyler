@@ -1642,8 +1642,6 @@ static void enter_fullscreen(client_t *c)
 {
         state_t *src, *dst;
 
-        int was_tile = is_tile(c);
-
         src = &c->state[c->current_state];
         dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
         memcpy(dst, src, sizeof *src);
@@ -1656,9 +1654,7 @@ static void enter_fullscreen(client_t *c)
 
         move_resize_client(c, 0);
 
-        if (was_tile)
-                tile(c->screen);
-
+        tile(c->screen);
         stack(c->screen);
 }
 
