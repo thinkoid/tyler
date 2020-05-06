@@ -286,6 +286,23 @@ static void tile(screen_t *s)
                 free(prs);
 }
 
+static void print_status()
+{
+        int i;
+        screen_t *s;
+
+        for (i = 0, s = screen_head; s; s = s->next, ++i) {
+                int n = 0, urgent = 0;
+
+                client_t *c = s->head;
+                for (; c; ++n, urgent |= state_of(c)->urgent, c = c->next) ;
+
+                printf("%d:%d:%d:%d ", i, n, s == current_screen, urgent);
+        }
+
+        printf("\n");
+        fflush(stdout);
+}
 /**********************************************************************/
 
 #if defined(XINERAMA)
@@ -603,6 +620,17 @@ static client_t *last_visible_client(client_t *p, client_t *pend)
         for (; p && p != pend; p = p->next)
                 if (is_visible(p))
                         c = p;
+
+        return c;
+}
+
+static client_t *last_focused_client(screen_t *s)
+{
+        client_t *c = 0;
+        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next) ;
+
+        if (c && (c = c->focus_next))
+                for (; c && !is_visible(c); c = c->focus_next) ;
 
         return c;
 }
