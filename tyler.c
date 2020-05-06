@@ -456,6 +456,47 @@ static client_t *client_for(Window win)
         return 0;
 }
 
+static int get_root_pointer_coordinates(int *x, int *y)
+{
+        int i;
+        unsigned u;
+        Window w;
+
+        return XQueryPointer(DPY, ROOT, &w, &w, x, y, &i, &i, &u);
+}
+
+static int test_point_in(rect_t *r, int x, int y)
+{
+        return r->x <= x && x < r->x + r->w && r->y <= y && y < r->y + r->h;
+}
+
+static screen_t *screen_at(int x, int y)
+{
+        screen_t *s;
+
+        if (test_point_in (&current_screen->r, x, y))
+                return current_screen;
+
+        for (s = screen_head; s && !test_point_in(&s->r, x, y); s = s->next)
+                ;
+
+        return s;
+}
+
+static screen_t *screen_for(Window win)
+{
+        int x, y;
+        client_t *c;
+
+        if (ROOT == win && get_root_pointer_coordinates(&x, &y))
+                return screen_at(x, y);
+
+        if ((c = client_for(win)))
+                return c->screen;
+
+        return current_screen;
+}
+
 static int is_managed(Window win)
 {
         return 0 != client_for(win);
@@ -731,7 +772,7 @@ static void stack_pop(client_t *c)
         c->focus_next = 0;
 }
 
-static void restack(screen_t *s)
+static void stack(screen_t *s)
 {
         client_t *c, *cur;
 
@@ -826,8 +867,10 @@ static void focus(client_t *c)
         if (c->screen != current_screen)
                 current_screen = c->screen;
 
-        stack_pop(c);
-        stack_push_front(c);
+        if (c != current_screen->current) {
+                stack_pop(c);
+                stack_push_front(c);
+        }
 
         set_select_window_border(c->win);
         set_client_focus(c);
@@ -850,7 +893,7 @@ static void unmanage(client_t *c)
         if (is_tile(c) && is_visible(c))
                 tile(s);
 
-        restack(s);
+        stack(s);
 
         if (is_visible(c) && c == s->current) {
                 s->current = stack_top(s);
@@ -883,7 +926,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         stack_push_front(c);
 
         if (is_tile(c)) tile(s);
-        restack(s);
+        stack(s);
 
         focus(c);
 
@@ -933,7 +976,7 @@ static int update_screen(screen_t *s, rect_t *r)
                 memcpy(&s->r, r, sizeof *r);
 
                 tile(s);
-                restack(s);
+                stack(s);
 
                 focus(s->current);
         }
@@ -1000,11 +1043,11 @@ static int update_screens()
 
         current_screen->current = stack_top(current_screen);
 
-        unmap_invisible();
         map_visible();
+        unmap_invisible();
 
         tile(current_screen);
-        restack(current_screen);
+        stack(current_screen);
 
         focus(current_screen->current);
 
@@ -1062,16 +1105,6 @@ static void setup_sigchld()
 
 /**********************************************************************/
 
-
-static int get_root_pointer_coordinates(int *x, int *y)
-{
-        int i;
-        unsigned u;
-        Window w;
-
-        return XQueryPointer(DPY, ROOT, &w, &w, x, y, &i, &i, &u);
-}
-
 static int grab_pointer(cursor_t cursor)
 {
         return GrabSuccess == XGrabPointer(
@@ -1121,14 +1154,14 @@ static int zoom()
                                 stack_push_front(c);
 
                                 tile(current_screen);
-                                restack(current_screen);
+                                stack(current_screen);
                         }
                 } else {
                         pop(cur);
                         push_front(cur);
 
                         tile(current_screen);
-                        restack(current_screen);
+                        stack(current_screen);
                 }
         }
 
@@ -1198,7 +1231,7 @@ static void move_focus(client_t *from, client_t *to)
                 stack_push_front(to);
 
                 tile(to->screen);
-                restack(to->screen);
+                stack(to->screen);
 
                 focus(to);
         }
@@ -1379,7 +1412,7 @@ static int do_move_client(client_t *c)
                                 state->floating = 1;
 
                                 tile(c->screen);
-                                restack(c->screen);
+                                stack(c->screen);
                         }
 
                         XMoveWindow(DPY, c->win, x, y);
@@ -1449,7 +1482,7 @@ static int do_resize_client(client_t *c)
                                 state->floating = 1;
 
                                 tile(c->screen);
-                                restack(c->screen);
+                                stack(c->screen);
                         }
 
                         if (x - r->x < minw) x = r->x + minw;
@@ -1492,20 +1525,24 @@ static int tag(int n)
         if ((1U << n) == current_screen->tags)
                 return 0;
 
-        pause_propagate(ROOT, SubstructureNotifyMask);
+        printf(" --> tag\n");
 
-        unfocus(current_screen->current);
+        {
+                pause_propagate(ROOT, SubstructureNotifyMask);
 
-        current_screen->tags = 1U << n;
-        current_screen->current = stack_top(current_screen);
+                unfocus(current_screen->current);
 
-        map_visible();
-        unmap_invisible();
+                current_screen->tags = 1U << n;
+                current_screen->current = stack_top(current_screen);
 
-        resume_propagate(ROOT, ROOTMASK);
+                map_visible();
+                unmap_invisible();
+
+                resume_propagate(ROOT, ROOTMASK);
+        }
 
         tile(current_screen);
-        restack(current_screen);
+        stack(current_screen);
 
         focus(current_screen->current);
 
@@ -1542,7 +1579,7 @@ static int tile_current()
                 state->floating = state->fullscreen = 0;
 
                 tile(current_screen);
-                restack(current_screen);
+                stack(current_screen);
 
                 focus(cur);
         }
@@ -1596,24 +1633,6 @@ static ptrcmd_t g_ptrcmds[] = { { MODKEY, Button1, move_client },
 
 /**********************************************************************/
 
-static int test_point_in(rect_t *r, int x, int y)
-{
-        return r->x <= x && x < r->x + r->w && r->y <= y && y < r->y + r->h;
-}
-
-static screen_t *screen_at(int x, int y)
-{
-        screen_t *s;
-
-        if (test_point_in (&current_screen->r, x, y))
-                return current_screen;
-
-        for (s = screen_head; s && !test_point_in(&s->r, x, y); s = s->next)
-                ;
-
-        return s;
-}
-
 static void exit_fullscreen(client_t *c)
 {
         state_t *state;
@@ -1627,7 +1646,7 @@ static void exit_fullscreen(client_t *c)
         move_resize_client(c, 0);
 
         tile(c->screen);
-        restack(c->screen);
+        stack(c->screen);
 }
 
 static void enter_fullscreen(client_t *c)
@@ -1649,7 +1668,7 @@ static void enter_fullscreen(client_t *c)
         focus(c);
 
         tile(c->screen);
-        restack(c->screen);
+        stack(c->screen);
 }
 
 static void mark_urgent(client_t *c)
@@ -1722,23 +1741,42 @@ static int motion_notify_handler(XEvent *arg)
         return 0;
 }
 
+/*
+ * All EnterNotify and LeaveNotify events caused by a hierarchy change are
+ * generated after any hierarchy event (UnmapNotify, MapNotify, ConfigureNotify,
+ * GravityNotify, CirculateNotify) caused by that change; however, the X
+ * protocol does not constrain the ordering of EnterNotify and LeaveNotify
+ * events with respect to FocusOut, VisibilityNotify, and Expose events.
+ */
 static int enter_notify_handler(XEvent *arg)
 {
-        client_t *c;
+        client_t *c, *cur;
+        screen_t *s;
+
         XCrossingEvent *ev = &arg->xcrossing;
 
         if (ev->mode != NotifyNormal || ev->detail == NotifyInferior)
                 return 0;
 
-        if (0 == (c = client_for(ev->window)) || !is_visible(c))
-                return 0;
+        c = client_for(ev->window);
+        s = c ? c->screen : screen_for(ev->window);
 
-        if (c != current_screen->current)
-                unfocus(current_screen->current);
+        if ((cur = current_screen->current) && c != cur)
+                unfocus(cur);
 
-        current_screen = c->screen;
+        current_screen = s;
+        ASSERT(0 == c || c->screen == s);
 
-        focus(c);
+        if (c && is_visible(c)) {
+                if (c != current_screen->current) {
+                        stack_pop(c);
+                        stack_push_front(c);
+
+                        stack(c->screen);
+                }
+
+                focus(c);
+        }
 
         return 0;
 }
@@ -1751,7 +1789,7 @@ static int focus_in_handler(XEvent *arg)
         c = current_screen->current;
 
         if (c && c->win != arg->xfocus.window) {
-                restack(c->screen);
+                stack(c->screen);
                 focus(c);
         }
 
@@ -1837,7 +1875,7 @@ static int property_notify_handler(XEvent *arg)
                                 state_of(c)->floating = 1;
 
                                 tile(c->screen);
-                                restack(c->screen);
+                                stack(c->screen);
                         }
                         break;
 
