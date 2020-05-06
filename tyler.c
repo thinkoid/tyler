@@ -856,8 +856,10 @@ static void unfocus(client_t *c)
 
 static void focus(client_t *c)
 {
-        if (0 == c)
+        if (0 == c) {
+                reset_focus_property();
                 return;
+        }
 
         ASSERT(current_screen);
 
@@ -890,18 +892,12 @@ static void unmanage(client_t *c)
         pop(c);
         stack_pop(c);
 
-        if (is_tile(c) && is_visible(c))
-                tile(s);
+        if (is_visible(c)) {
+                if (is_tile(c))
+                        tile(s);
 
-        stack(s);
-
-        if (is_visible(c) && c == s->current) {
-                s->current = stack_top(s);
-
-                if (s->current)
-                        focus(c->screen->current);
-                else
-                        reset_focus_property();
+                if (s == current_screen)
+                        focus(s->current);
         }
 
         free(c);
@@ -925,10 +921,10 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         push_front(c);
         stack_push_front(c);
 
-        if (is_tile(c)) tile(s);
-        stack(s);
+        if (is_tile(c))
+                tile(s);
 
-        focus(c);
+        stack(s);
 
         return c;
 }
@@ -1525,8 +1521,6 @@ static int tag(int n)
         if ((1U << n) == current_screen->tags)
                 return 0;
 
-        printf(" --> tag\n");
-
         {
                 pause_propagate(ROOT, SubstructureNotifyMask);
 
@@ -1566,22 +1560,17 @@ TAG_DEF(9)
 
 static int tile_current()
 {
-        state_t *state;
         client_t *cur;
-
-        ASSERT(current_screen);
 
         if (0 == (cur = current_screen->current))
                 return 0;
 
         if (is_tileable(cur)) {
-                state = &cur->state[cur->current_state];
+                state_t *state = &cur->state[cur->current_state];
                 state->floating = state->fullscreen = 0;
 
                 tile(current_screen);
                 stack(current_screen);
-
-                focus(cur);
         }
 
         return 0;
@@ -1653,6 +1642,8 @@ static void enter_fullscreen(client_t *c)
 {
         state_t *src, *dst;
 
+        int was_tile = is_tile(c);
+
         src = &c->state[c->current_state];
         dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
         memcpy(dst, src, sizeof *src);
@@ -1665,9 +1656,9 @@ static void enter_fullscreen(client_t *c)
 
         move_resize_client(c, 0);
 
-        focus(c);
+        if (was_tile)
+                tile(c->screen);
 
-        tile(c->screen);
         stack(c->screen);
 }
 
@@ -1741,13 +1732,6 @@ static int motion_notify_handler(XEvent *arg)
         return 0;
 }
 
-/*
- * All EnterNotify and LeaveNotify events caused by a hierarchy change are
- * generated after any hierarchy event (UnmapNotify, MapNotify, ConfigureNotify,
- * GravityNotify, CirculateNotify) caused by that change; however, the X
- * protocol does not constrain the ordering of EnterNotify and LeaveNotify
- * events with respect to FocusOut, VisibilityNotify, and Expose events.
- */
 static int enter_notify_handler(XEvent *arg)
 {
         client_t *c, *cur;
@@ -1765,32 +1749,25 @@ static int enter_notify_handler(XEvent *arg)
                 unfocus(cur);
 
         current_screen = s;
-        ASSERT(0 == c || c->screen == s);
 
         if (c && is_visible(c)) {
-                if (c != current_screen->current) {
-                        stack_pop(c);
-                        stack_push_front(c);
-
-                        stack(c->screen);
-                }
-
                 focus(c);
+
+                pause_propagate(c->win, EnterWindowMask);
+                stack(current_screen);
+                resume_propagate(c->win, CLIENTMASK);
         }
 
         return 0;
 }
 
-static int focus_in_handler(XEvent *arg)
+static int focusin_handler(XEvent *arg)
 {
-        client_t *c;
+        client_t *cur = current_screen->current;
 
-        ASSERT(current_screen);
-        c = current_screen->current;
-
-        if (c && c->win != arg->xfocus.window) {
-                stack(c->screen);
-                focus(c);
+        if (cur && cur->win != arg->xfocus.window) {
+                focus(cur);
+                stack(cur->screen);
         }
 
         return 0;
@@ -1934,7 +1911,7 @@ static int handle_event(XEvent *arg)
                 motion_notify_handler, /* 6 */
                 enter_notify_handler, /* 7 */
                 0,
-                focus_in_handler, /* 9 */
+                focusin_handler, /* 9 */
                 0, 0, 0, 0, 0, 0, 0,
                 destroy_notify_handler, /* 17 */
                 unmap_notify_handler,  /* 18 */
