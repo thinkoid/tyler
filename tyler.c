@@ -639,13 +639,9 @@ static void unmap(int visible)
 {
         client_t *c;
 
-        pause_propagate(ROOT, SubstructureNotifyMask);
-
         for (c = current_screen->head; c; c = c->next)
                 if (visible == (is_visible(c)))
                         XUnmapWindow(DPY, c->win);
-
-        resume_propagate(ROOT, ROOTMASK);
 }
 
 static void unmap_visible() { return unmap(1); }
@@ -1493,23 +1489,28 @@ static int resize_client()
 
 static int tag(int n)
 {
-        if ((1U << n) != current_screen->tags) {
-                unfocus(current_screen->current);
-                unmap_visible();
+        if ((1U << n) == current_screen->tags)
+                return 0;
 
-                current_screen->tags = 1U << n;
-                map_visible();
+        pause_propagate(ROOT, SubstructureNotifyMask);
 
-                current_screen->current = stack_top(current_screen);
+        unfocus(current_screen->current);
 
-                tile(current_screen);
-                restack(current_screen);
+        current_screen->tags = 1U << n;
+        current_screen->current = stack_top(current_screen);
 
-                focus(current_screen->current);
+        map_visible();
+        unmap_invisible();
 
-                if (0 == current_screen->current)
-                        reset_focus_property();
-        }
+        resume_propagate(ROOT, ROOTMASK);
+
+        tile(current_screen);
+        restack(current_screen);
+
+        focus(current_screen->current);
+
+        if (0 == current_screen->current)
+                reset_focus_property();
 
         return 0;
 }
