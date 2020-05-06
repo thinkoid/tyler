@@ -118,7 +118,7 @@ struct screen {
         float master_ratio;
 
         /* Client list, stack list, current client shortcut */
-        client_t *client_head, *focus_head, *current_client;
+        client_t *head, *focus_head, *current;
 
         /* Next screen in screen list */
         screen_t *next;
@@ -229,7 +229,7 @@ static size_t count_visible_clients(screen_t *s)
         client_t *c;
         size_t n;
 
-        for (n = 0, c = s->client_head; c; c = c->next)
+        for (n = 0, c = s->head; c; c = c->next)
                 if (is_visible(c))
                         ++n;
 
@@ -241,7 +241,7 @@ static size_t count_visible_tiles(screen_t *s)
         client_t *c;
         size_t n;
 
-        for (n = 0, c = s->client_head; c; c = c->next)
+        for (n = 0, c = s->head; c; c = c->next)
                 if (is_visible_tile(c)) ++n;
 
         return n;
@@ -268,7 +268,7 @@ static void tile(screen_t *s)
         client_t *c;
         size_t n;
 
-        for (n = 0, c = s->client_head; c; c = c->next)
+        for (n = 0, c = s->head; c; c = c->next)
                 if (is_visible_tile(c)) ++n;
 
         if (n > SIZEOF(rs)) {
@@ -278,7 +278,7 @@ static void tile(screen_t *s)
         get_tiles_geometries(&s->r, s->master_size, s->master_ratio, prs, n);
         r = prs;
 
-        for (c = s->client_head; c; c = c->next)
+        for (c = s->head; c; c = c->next)
                 if (is_visible_tile(c))
                         move_resize_client(c, r++);
 
@@ -418,7 +418,7 @@ static screen_t *make_screen(rect_t *r)
         s->master_size = config_master_size();
         s->master_ratio = config_master_ratio();
 
-        s->client_head = s->focus_head = s->current_client = 0;
+        s->head = s->focus_head = s->current = 0;
         s->next = 0;
 
         return s;
@@ -432,7 +432,7 @@ static client_t *client_for(Window win)
         screen_t *s;
 
         for (s = screen_head; s; s = s->next)
-                for (c = s->client_head; c; c = c->next)
+                for (c = s->head; c; c = c->next)
                         if (win == c->win)
                                 return c;
 
@@ -613,7 +613,7 @@ static void unmap(int visible)
 
         pause_propagate(ROOT, SubstructureNotifyMask);
 
-        for (c = current_screen->client_head; c; c = c->next)
+        for (c = current_screen->head; c; c = c->next)
                 if (visible == (is_visible(c)))
                         XUnmapWindow(DPY, c->win);
 
@@ -627,15 +627,15 @@ static void map_visible()
 {
         client_t *c;
 
-        for (c = current_screen->client_head; c; c = c->next)
+        for (c = current_screen->head; c; c = c->next)
                 if (is_visible(c))
                         XMapWindow(DPY, c->win);
 }
 
 static void push_front(client_t *c)
 {
-        c->next = c->screen->client_head;
-        c->screen->client_head = c;
+        c->next = c->screen->head;
+        c->screen->head = c;
 }
 
 static void stack_push_front(client_t *c)
@@ -644,14 +644,14 @@ static void stack_push_front(client_t *c)
         c->screen->focus_head = c;
 
         if (is_visible(c))
-                c->screen->current_client = c;
+                c->screen->current = c;
 }
 
 static void push_back(client_t *c)
 {
         client_t **pptr;
 
-        for (pptr = &c->screen->client_head; *pptr; pptr = &(*pptr)->next)
+        for (pptr = &c->screen->head; *pptr; pptr = &(*pptr)->next)
                 ;
 
         *pptr = c;
@@ -669,7 +669,7 @@ static void stack_push_back(client_t *c)
 
 static void pop(client_t *c)
 {
-        client_t **pptr = &c->screen->client_head;
+        client_t **pptr = &c->screen->head;
 
         for (; *pptr && *pptr != c; pptr = &(*pptr)->next)
                 ;
@@ -701,8 +701,8 @@ static void stack_pop(client_t *c)
         ASSERT(*pptr);
         *pptr = c->focus_next;
 
-        if (c == c->screen->current_client)
-                c->screen->current_client = stack_top(c->screen);
+        if (c == c->screen->current)
+                c->screen->current = stack_top(c->screen);
 
         c->focus_next = 0;
 }
@@ -714,7 +714,7 @@ static void restack(screen_t *s)
         Window ws[64], *pws = ws;
         size_t n = 0, i = 0, j = 0, k = 0;
 
-        for (c = s->client_head; c; c = c->next) {
+        for (c = s->head; c; c = c->next) {
                 if (is_visible(c)) {
                         ++n;
 
@@ -734,7 +734,7 @@ static void restack(screen_t *s)
                 pws = malloc(n * sizeof *pws);
         }
 
-        if ((cur = s->current_client)) {
+        if ((cur = s->current)) {
                 if (is_fft(cur)) {
                         if (cur->state[cur->current_state].fullscreen) {
                                 pws[j++] = cur->win;
@@ -747,7 +747,7 @@ static void restack(screen_t *s)
                 }
         }
 
-        for (c = s->client_head; c; c = c->next) {
+        for (c = s->head; c; c = c->next) {
                 if (c == cur || !is_visible(c))
                         continue;
 
@@ -796,8 +796,8 @@ static void focus(client_t *c)
 
         ASSERT(current_screen);
 
-        if (c != current_screen->current_client)
-                unfocus(current_screen->current_client);
+        if (c != current_screen->current)
+                unfocus(current_screen->current);
 
         if (c->screen != current_screen)
                 current_screen = c->screen;
@@ -828,11 +828,11 @@ static void unmanage(client_t *c)
 
         restack(s);
 
-        if (is_visible(c) && c == s->current_client) {
-                s->current_client = stack_top(s);
+        if (is_visible(c) && c == s->current) {
+                s->current = stack_top(s);
 
-                if (s->current_client)
-                        focus(c->screen->current_client);
+                if (s->current)
+                        focus(c->screen->current);
                 else
                         reset_focus_property();
         }
@@ -853,7 +853,7 @@ static client_t *manage(Window win, XWindowAttributes *attr)
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
 
-        unfocus(s->current_client);
+        unfocus(s->current);
 
         push_front(c);
         stack_push_front(c);
@@ -896,7 +896,7 @@ static void free_screens()
         client_t *c, *cnext;
 
         for (; s; snext = s->next, free(s), s = snext) {
-                c = s->client_head;
+                c = s->head;
                 for (; c; cnext = c->next, free(c), c = cnext)
                         if (!send(c->win, WM_DELETE_WINDOW))
                                 zap_window(c->win);
@@ -911,7 +911,7 @@ static int update_screen(screen_t *s, rect_t *r)
                 tile(s);
                 restack(s);
 
-                focus(s->current_client);
+                focus(s->current);
         }
 
         return 0;
@@ -961,12 +961,12 @@ static int update_screens()
                 *pps = 0;
 
                 for (; ps; ptmp = ps->next, free(ps), ps = ptmp) {
-                        unfocus(ps->current_client);
+                        unfocus(ps->current);
 
-                        for (c = ps->client_head; c; c = c->next)
+                        for (c = ps->head; c; c = c->next)
                                 c->screen = pscur;
 
-                        push_back(ps->client_head);
+                        push_back(ps->head);
                         stack_push_back(ps->focus_head);
                 }
         }
@@ -974,7 +974,7 @@ static int update_screens()
         current_screen = pscur;
         ASSERT(current_screen);
 
-        current_screen->current_client = stack_top(current_screen);
+        current_screen->current = stack_top(current_screen);
 
         unmap_invisible();
         map_visible();
@@ -982,7 +982,7 @@ static int update_screens()
         tile(current_screen);
         restack(current_screen);
 
-        focus(current_screen->current_client);
+        focus(current_screen->current);
 
         if (prs != rs)
                 free(prs);
@@ -1081,8 +1081,8 @@ static int zoom()
 
         ASSERT(current_screen);
 
-        if ((cur = current_screen->current_client) && is_tile(cur)) {
-                c = first_visible_tile(current_screen->client_head, 0);
+        if ((cur = current_screen->current) && is_tile(cur)) {
+                c = first_visible_tile(current_screen->head, 0);
                 ASSERT(c);
 
                 if (c == cur) {
@@ -1188,8 +1188,8 @@ static int move_focus_left()
         ASSERT(current_screen);
         s = current_screen;
 
-        if ((cur = s->current_client)) {
-                if (0 == (c = last_visible_client(s->client_head, cur)))
+        if ((cur = s->current)) {
+                if (0 == (c = last_visible_client(s->head, cur)))
                         c = last_visible_client(cur->next, 0);
 
                 move_focus(cur, c);
@@ -1206,9 +1206,9 @@ static int move_focus_right()
         ASSERT(current_screen);
         s = current_screen;
 
-        if ((cur = s->current_client)) {
+        if ((cur = s->current)) {
                 if (0 == (c = first_visible_client(cur->next, 0)))
-                        c = first_visible_client(s->client_head, cur);
+                        c = first_visible_client(s->head, cur);
 
                 move_focus(cur, c);
         }
@@ -1241,7 +1241,7 @@ static int zap()
         client_t *cur;
 
         ASSERT(current_screen);
-        cur = current_screen->current_client;
+        cur = current_screen->current;
 
         if (cur && !send(cur->win, WM_DELETE_WINDOW))
                 zap_window(cur->win);
@@ -1263,10 +1263,10 @@ static int focus_next_monitor()
         if (s == current_screen)
                 return 0;
 
-        unfocus(current_screen->current_client);
+        unfocus(current_screen->current);
         reset_focus_property();
 
-        focus((current_screen = s)->current_client);
+        focus((current_screen = s)->current);
 
         return 0;
 }
@@ -1289,10 +1289,10 @@ static int focus_prev_monitor()
         if (0 == s)
                 return 0;
 
-        unfocus(current_screen->current_client);
+        unfocus(current_screen->current);
         reset_focus_property();
 
-        focus((current_screen = s)->current_client);
+        focus((current_screen = s)->current);
 
         return 0;
 }
@@ -1373,7 +1373,7 @@ static int move_client()
 {
         client_t *c;
 
-        if (0 == (c = current_screen->current_client) || is_fullscreen(c))
+        if (0 == (c = current_screen->current) || is_fullscreen(c))
                 return 0;
 
         if (grab_pointer(MOVE_CURSOR)) {
@@ -1452,7 +1452,7 @@ static int resize_client()
 {
         client_t *c;
 
-        if (0 == (c = current_screen->current_client) || !is_resizeable(c))
+        if (0 == (c = current_screen->current) || !is_resizeable(c))
                 return 0;
 
         if (grab_pointer(RESIZE_CURSOR)) {
@@ -1466,20 +1466,20 @@ static int resize_client()
 static int tag(int n)
 {
         if ((1U << n) != current_screen->tags) {
-                unfocus(current_screen->current_client);
+                unfocus(current_screen->current);
                 unmap_visible();
 
                 current_screen->tags = 1U << n;
                 map_visible();
 
-                current_screen->current_client = stack_top(current_screen);
+                current_screen->current = stack_top(current_screen);
 
                 tile(current_screen);
                 restack(current_screen);
 
-                focus(current_screen->current_client);
+                focus(current_screen->current);
 
-                if (0 == current_screen->current_client)
+                if (0 == current_screen->current)
                         reset_focus_property();
         }
 
@@ -1505,7 +1505,7 @@ static int tile_current()
 
         ASSERT(current_screen);
 
-        if (0 == (cur = current_screen->current_client))
+        if (0 == (cur = current_screen->current))
                 return 0;
 
         if (is_tileable(cur)) {
@@ -1685,8 +1685,8 @@ static int motion_notify_handler(XEvent *arg)
                 ASSERT(s);
 
                 if (s && s != current_screen) {
-                        unfocus(current_screen->current_client);
-                        focus((current_screen = s)->current_client);
+                        unfocus(current_screen->current);
+                        focus((current_screen = s)->current);
                 }
         }
 
@@ -1704,8 +1704,8 @@ static int enter_notify_handler(XEvent *arg)
         if (0 == (c = client_for(ev->window)) || !is_visible(c))
                 return 0;
 
-        if (c != current_screen->current_client)
-                unfocus(current_screen->current_client);
+        if (c != current_screen->current)
+                unfocus(current_screen->current);
 
         current_screen = c->screen;
 
@@ -1719,7 +1719,7 @@ static int focus_in_handler(XEvent *arg)
         client_t *c;
 
         ASSERT(current_screen);
-        c = current_screen->current_client;
+        c = current_screen->current;
 
         if (c && c->win != arg->xfocus.window) {
                 restack(c->screen);
@@ -1848,7 +1848,7 @@ static int client_message_handler(XEvent *arg)
                         }
                 }
         } else if (NET_ACTIVE_WINDOW == ev->message_type) {
-                if (c != current_screen->current_client && !is_urgent(c))
+                if (c != current_screen->current && !is_urgent(c))
                         mark_urgent(c);
         }
 
