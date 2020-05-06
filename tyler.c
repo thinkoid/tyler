@@ -1462,7 +1462,7 @@ static int do_resize_client(client_t *c)
                         r->w = x - r->x;
                         r->h = y - r->y;
 
-                        XMoveResizeWindow(DPY, c->win, r->x, r->y, r->w, r->h);
+                        XResizeWindow(DPY, c->win, r->w, r->h);
                         break;
                 default:
                         break;
