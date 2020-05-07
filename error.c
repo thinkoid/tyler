@@ -9,7 +9,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
 
-static error_handler_type other_error_handler = 0, error_handler = 0;
+static error_handler_type default_error_handler = 0;
 
 static int null_error_handler(Display *dpy, XErrorEvent *ee)
 {
@@ -26,7 +26,7 @@ static int aborting_error_handler(Display *dpy, XErrorEvent *ee)
         exit(1);
 }
 
-static int default_error_handler(Display *dpy, XErrorEvent *ee)
+static int error_handler(Display *dpy, XErrorEvent *ee)
 {
         UNUSED(dpy);
 
@@ -52,45 +52,19 @@ static int default_error_handler(Display *dpy, XErrorEvent *ee)
 #undef REQ
 #undef ERR
 
-        return 1;
-}
-
-static int error_handler_dispatch(Display *dpy, XErrorEvent *ee)
-{
-        UNUSED(dpy);
-        UNUSED(ee);
-
-        ASSERT(other_error_handler);
-        ASSERT(error_handler);
-
-        if ((error_handler && 0 == error_handler(dpy, ee)) || other_error_handler)
-                return other_error_handler(dpy, ee);
-
-        return 0;
+        ASSERT(default_error_handler);
+        return default_error_handler(dpy, ee);
 }
 
 void init_error_handling()
 {
-        ASSERT(0 == error_handler);
-        ASSERT(0 == other_error_handler);
-
-        /*
-         * Hook the top error-handler and save the Xlib "other" error handling
-         * routine:
-         */
-        other_error_handler = XSetErrorHandler(aborting_error_handler);
-
-        /*
-         * ... SubstructureRedirectMask can only be set once for the root
-         * window, by a WM:
-         */
+        ASSERT(0 == default_error_handler);
+        default_error_handler = XSetErrorHandler(aborting_error_handler);
 
         XSelectInput(DPY, ROOT, SubstructureRedirectMask);
         XSync(DPY, 0);
 
-        error_handler = default_error_handler;
-        XSetErrorHandler(error_handler_dispatch);
-
+        XSetErrorHandler(error_handler);
         XSync(DPY, 0);
 }
 
@@ -101,5 +75,5 @@ void pause_error_handling()
 
 void resume_error_handling()
 {
-        XSetErrorHandler(error_handler_dispatch);
+        XSetErrorHandler(error_handler);
 }
