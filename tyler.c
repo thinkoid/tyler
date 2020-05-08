@@ -773,6 +773,7 @@ static void stack_pop(client_t *c)
 
 static void stack(screen_t *s)
 {
+        XEvent ignore;
         client_t *c, *cur;
 
         Window ws[64], *pws = ws;
@@ -827,6 +828,22 @@ static void stack(screen_t *s)
         }
 
         if (n) XRestackWindows(DPY, pws, n);
+
+        /*
+         * An EnterNotify event is also generated when a window is mapped over
+         * the current position of the pointer, and a LeaveNotify is generated
+         * when a window containing the pointer is unmapped.
+         *
+         * [..] All EnterNotify and LeaveNotify events caused by a hierarchy
+         * change are generated after any hierarchy event (UnmapNotify,
+         * MapNotify, ConfigureNotify, GravityNotify, CirculateNotify) caused by
+         * that change.
+         *
+         * To prevent a restack-enter-focus loop we consume all EnterNotify
+         * events here:
+         */
+        XSync(DPY, 0);
+        while (XCheckMaskEvent(DPY, EnterWindowMask, &ignore));
 
         if (pws != ws)
                 free(pws);
@@ -1730,11 +1747,7 @@ static int enter_notify_handler(XEvent *arg)
                 stack_push_front(c);
         }
 
-        {
-                pause_propagate(cur->win, EnterWindowMask);
-                stack(current_screen);
-                resume_propagate(cur->win, CLIENTMASK);
-        }
+        stack(current_screen);
 
         if (is_visible(c))
                 focus(c);
