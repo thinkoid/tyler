@@ -251,7 +251,7 @@ static void move_resize_client(client_t *c, rect_t *r)
         geom_t *g = &state_of(c)->g;
 
         if (r && r != &g->r)
-                memcpy(&g->r, r, sizeof *r);
+                g->r = *r;
 
         XMoveResizeWindow(DPY, c->win,
                           g->r.x,
@@ -1627,8 +1627,8 @@ static void exit_fullscreen(client_t *c)
         c->current_state = (c->current_state + 1) % 2;
         state = &c->state[c->current_state];
 
-        reset_fullscreen_property(c->win);
         state->fullscreen = 0;
+        reset_fullscreen_property(c->win);
 
         move_resize_client(c, 0);
 
@@ -1642,13 +1642,14 @@ static void enter_fullscreen(client_t *c)
 
         src = &c->state[c->current_state];
         dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
-        memcpy(dst, src, sizeof *src);
 
-        set_fullscreen_property(c->win);
+        dst = src;
+
+        dst->g.r = c->screen->r;
+        dst->g.bw = 0;
 
         dst->fullscreen = dst->floating = 1;
-        memcpy(&dst->g.r, &c->screen->r, sizeof(rect_t));
-        dst->g.bw = 0;
+        set_fullscreen_property(c->win);
 
         move_resize_client(c, 0);
 
