@@ -25,6 +25,8 @@ CPPFLAGS  = -DXINERAMA -DVERSION=$(VERSION) \
 LDFLAGS =
 LIBS = $(X11_LIBS) $(PANGO_LIBS) $(FT2_LIBS)
 
+INSTALLDIR = ~/bin
+
 DEPENDDIR = ./.deps
 DEPENDFLAGS = -M
 
@@ -57,3 +59,6 @@ clean:
 
 realclean:
 	@rm -rf $(TARGET) $(OBJS) $(DEPENDDIR)
+
+install: tyler
+	install $< $(INSTALLDIR)
