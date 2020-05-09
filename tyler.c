@@ -47,6 +47,7 @@
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
+        | StructureNotifyMask                   \
         | ButtonPressMask                       \
         | PointerMotionMask                     \
         | PropertyChangeMask)
