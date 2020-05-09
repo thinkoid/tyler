@@ -29,7 +29,7 @@
 #define BUTTONMASK (ButtonPressMask | ButtonReleaseMask)
 #define POINTERMASK (PointerMotionMask | BUTTONMASK)
 
-#define MODKEY Mod4Mask
+#define MODKEY Mod1Mask
 
 #define LOCKMASK (g_numlockmask | LockMask)
 #define ALLMODMASK (Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask)
@@ -1305,58 +1305,123 @@ static int zap()
         return 0;
 }
 
-static int focus_next_monitor()
+static screen_t *next_screen(screen_t *arg)
+{
+        screen_t *s = arg->next;
+
+        if (0 == s && arg == (s = screen_head))
+                s = 0;
+
+        return s;
+}
+
+static screen_t *last_screen(screen_t *p, screen_t *pend)
+{
+        screen_t *s = 0;
+
+        for (; p && p != pend; p = p->next)
+                s = p;
+
+        return s;
+}
+
+static screen_t *prev_screen(screen_t *arg)
 {
         screen_t *s;
 
-        ASSERT(screen_head);
-        ASSERT(current_screen);
+        if (0 == (s = last_screen(screen_head, arg)))
+                s = last_screen(arg, 0);
 
-        if (0 == (s = current_screen->next))
-                if (0 == (s = screen_head))
-                        return 0;
+        return s;
+}
 
-        if (s == current_screen)
-                return 0;
-
+static int focus_other_screen(screen_t *s)
+{
         unfocus(current_screen->current);
         focus((current_screen = s)->current);
 
         return 0;
 }
 
-static int focus_prev_monitor()
+static int focus_prev_screen()
 {
         screen_t *s;
 
-        ASSERT(screen_head);
-        ASSERT(current_screen);
-
-        for (s = screen_head; s && s != current_screen; s = s->next)
-                ;
-        ASSERT(s);
-
-        if (s == current_screen)
-                for (s = current_screen->next; s && s->next; s = s->next)
-                        ;
-
-        if (0 == s)
+        if (0 == (s = prev_screen(current_screen)))
                 return 0;
 
-        unfocus(current_screen->current);
-        focus((current_screen = s)->current);
-
-        return 0;
+        return focus_other_screen(s);
 }
 
-static int move_next_screen()
+static int focus_next_screen()
 {
+        screen_t *s;
+
+        if (0 == (s = next_screen(current_screen)))
+                return 0;
+
+        return focus_other_screen(s);
+}
+
+static int move_other_screen(screen_t *s, client_t *c)
+{
+        int x, y;
+        state_t *state = state_of(c);
+
+        x = state->g.r.x - c->screen->r.x;
+        y = state->g.r.y - c->screen->r.y;
+
+        pop(c);
+        stack_pop(c);
+
+        if (is_tile(c))
+                tile(current_screen);
+        stack(current_screen);
+
+        focus(current_screen->current);
+
+        x += s->r.x;
+        y += s->r.y;
+
+        XMoveWindow(DPY, c->win, x, y);
+
+        c->screen = s;
+        state->tags = current_screen->tags;
+
+        push_front(c);
+        stack_push_front(c);
+
+        if (is_tile(c))
+                tile(current_screen);
+        stack(current_screen);
+
+        focus(c);
+
         return 0;
 }
 
 static int move_prev_screen()
 {
-        return 0;
+        screen_t *s;
+        client_t *c;
+
+        if (0 == (c = current_screen->current) ||
+            0 == (s = prev_screen(current_screen)))
+                return 0;
+
+        return move_other_screen(s, c);
+}
+
+static int move_next_screen()
+{
+        screen_t *s;
+        client_t *c;
+
+        if (0 == (c = current_screen->current) ||
+            0 == (s = next_screen(current_screen)))
+                return 0;
+
+        return move_other_screen(s, c);
 }
 
 static int quit()
@@ -1596,10 +1661,10 @@ static keycmd_t g_keycmds[] = {
         { MODKEY,               XK_h,       shrink_master      },
         { MODKEY,               XK_l,       grow_master        },
         { MODKEY | ShiftMask,   XK_c,       zap                },
-        { MODKEY,               XK_comma,   focus_next_monitor },
-        { MODKEY,               XK_period,  focus_prev_monitor },
-        { MODKEY | ShiftMask,   XK_comma,   move_next_screen   },
-        { MODKEY | ShiftMask,   XK_period,  move_prev_screen   },
+        { MODKEY,               XK_comma,   focus_prev_screen  },
+        { MODKEY,               XK_period,  focus_next_screen  },
+        { MODKEY | ShiftMask,   XK_comma,   move_prev_screen   },
+        { MODKEY | ShiftMask,   XK_period,  move_next_screen   },
         { MODKEY | ShiftMask,   XK_q,       quit               },
         { MODKEY,               XK_t,       tile_current       },
 
