@@ -1742,7 +1742,7 @@ static int enter_notify_handler(XEvent *arg)
         if ((cur = current_screen->current) && c != cur)
                 unfocus(cur);
 
-        current_screen->current = c;
+        current_screen = c->screen;
 
         if ((cur = current_screen->current) && c != cur) {
                 stack_pop(c);
