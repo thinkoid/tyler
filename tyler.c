@@ -1590,17 +1590,12 @@ static int resize_client()
         return 0;
 }
 
-static int tag(int n)
+static void do_tag()
 {
-        if ((1U << n) == current_screen->tags)
-                return 0;
-
         {
                 pause_propagate(ROOT, SubstructureNotifyMask);
 
                 unfocus(current_screen->current);
-
-                current_screen->tags = 1U << n;
                 current_screen->current = stack_top(current_screen);
 
                 map_visible();
@@ -1615,11 +1610,46 @@ static int tag(int n)
         focus(current_screen->current);
 
         print_status();
+}
+
+static int tag(unsigned n)
+{
+        if (n == current_screen->tags)
+                return 0;
+
+        current_screen->tags = n;
+        do_tag();
 
         return 0;
 }
 
-#define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(x - 1); }
+#define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(1U << (x - 1)); }
+TAG_DEF(1)
+TAG_DEF(2)
+TAG_DEF(3)
+TAG_DEF(4)
+TAG_DEF(5)
+TAG_DEF(6)
+TAG_DEF(7)
+TAG_DEF(8)
+TAG_DEF(9)
+#undef TAG_DEF
+
+static int change_tag(unsigned n)
+{
+        client_t *c;
+
+        if (0 == (c = current_screen->current) || n == current_screen->tags)
+                return 0;
+
+        state_of(c)->tags = n;
+        do_tag();
+
+        return 0;
+}
+
+#define TAG_DEF(x) \
+        static int WM_CAT(change_tag_, x)() { return change_tag(1U << (x - 1)); }
 TAG_DEF(1)
 TAG_DEF(2)
 TAG_DEF(3)
@@ -1679,9 +1709,13 @@ static keycmd_t g_keycmds[] = {
         { MODKEY | ShiftMask,   XK_q,       quit               },
         { MODKEY,               XK_t,       tile_current       },
 
-#define TAG_DEF(x) { MODKEY, WM_CAT(XK_, x), WM_CAT(tag_, x) }
+#define TAG_DEF(x)                                                      \
+        { MODKEY,             WM_CAT(XK_, x), WM_CAT(tag_, x) },        \
+        { MODKEY | ShiftMask, WM_CAT(XK_, x), WM_CAT(change_tag_, x) }
+
         TAG_DEF(1), TAG_DEF(2), TAG_DEF(3), TAG_DEF(4), TAG_DEF(5),
         TAG_DEF(6), TAG_DEF(7), TAG_DEF(8), TAG_DEF(9)
+
 #undef TAG_DEF
 
         /* clang-format on */
