@@ -303,6 +303,7 @@ static void print_status()
         printf("\n");
         fflush(stdout);
 }
+
 /**********************************************************************/
 
 #if defined(XINERAMA)
@@ -900,6 +901,8 @@ static void unmanage(client_t *c)
         }
 
         free(c);
+
+        print_status();
 }
 
 static client_t *manage(Window win, XWindowAttributes *attr)
@@ -930,6 +933,8 @@ static client_t *manage(Window win, XWindowAttributes *attr)
                         focus(s->current);
         }
 
+        print_status();
+
         return c;
 }
 
@@ -955,6 +960,8 @@ static void make_screens()
 
         if (prs != rs)
                 free(prs);
+
+        print_status();
 }
 
 static void free_screens()
@@ -1051,6 +1058,8 @@ static int update_screens()
         stack(current_screen);
 
         focus(current_screen->current);
+
+        print_status();
 
         if (prs != rs)
                 free(prs);
@@ -1604,6 +1613,8 @@ static int tag(int n)
         stack(current_screen);
 
         focus(current_screen->current);
+
+        print_status();
 
         return 0;
 }
