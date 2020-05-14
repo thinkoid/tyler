@@ -1953,13 +1953,11 @@ static int client_message_handler(XEvent *arg)
         if (NET_WM_STATE == ev->message_type) {
                 if (NET_WM_STATE_FULLSCREEN == (Atom)ev->data.l[1] ||
                     NET_WM_STATE_FULLSCREEN == (Atom)ev->data.l[2]) {
-                        if (is_fullscreen(c)) {
-                                if (2 == ev->data.l[0])
-                                        exit_fullscreen(c);
-                        } else {
-                                if (3 & ev->data.l[0])
-                                        enter_fullscreen(c);
-                        }
+                        if ( 0 == ev->data.l[0] ||
+                            (2 == ev->data.l[0] && is_fullscreen(c)))
+                                exit_fullscreen(c);
+                        else
+                                enter_fullscreen(c);
                 }
         } else if (NET_ACTIVE_WINDOW == ev->message_type) {
                 if (c != current_screen->current && !is_urgent(c))
