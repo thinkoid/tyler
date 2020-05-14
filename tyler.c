@@ -1709,7 +1709,7 @@ static void enter_fullscreen(client_t *c)
         src = &c->state[c->current_state];
         dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
 
-        dst = src;
+        *dst = *src;
 
         dst->g.r = c->screen->r;
         dst->g.bw = 0;
