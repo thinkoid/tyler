@@ -1051,8 +1051,14 @@ static int update_screens()
 
         current_screen->current = stack_top(current_screen);
 
-        map_visible();
-        unmap_invisible();
+        {
+                pause_propagate(ROOT, SubstructureNotifyMask);
+
+                map_visible();
+                unmap_invisible();
+
+                resume_propagate(ROOT, ROOTMASK);
+        }
 
         tile(current_screen);
         stack(current_screen);
