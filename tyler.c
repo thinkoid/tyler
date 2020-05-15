@@ -1107,16 +1107,19 @@ static void update_numlockmask()
 static void sigchld_handler(int ignore)
 {
         UNUSED(ignore);
+
+        if (SIG_ERR == signal(SIGCHLD, sigchld_handler)) {
+                fprintf(stderr, "wm : failed to install SIGCHLD handler\n");
+                exit(1);
+        }
+
         while (0 < waitpid(-1, 0, WNOHANG))
                 ;
 }
 
 static void setup_sigchld()
 {
-        if (SIG_ERR == signal(SIGCHLD, sigchld_handler)) {
-                fprintf(stderr, "wm : failed to install SIGCHLD handler\n");
-                exit(1);
-        }
+        sigchld_handler(0);
 }
 
 /**********************************************************************/
