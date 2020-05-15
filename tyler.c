@@ -1744,8 +1744,10 @@ static void exit_fullscreen(client_t *c)
 {
         state_t *state;
 
-        c->current_state = (c->current_state + 1) % 2;
-        state = &c->state[c->current_state];
+        ASSERT(1 == c->current_state);
+        c->current_state = 0;
+
+        state = state_of(c);
 
         state->fullscreen = 0;
         reset_fullscreen_property(c->win);
@@ -1758,17 +1760,17 @@ static void exit_fullscreen(client_t *c)
 
 static void enter_fullscreen(client_t *c)
 {
-        state_t *src, *dst;
+        state_t *state = state_of(c);
 
-        src = &c->state[c->current_state];
-        dst = &c->state[(c->current_state = (c->current_state + 1) % 2)];
+        ASSERT(0 == c->current_state);
+        c->state[(c->current_state = 1)] = *state;
 
-        *dst = *src;
+        state = state_of(c);
 
-        dst->g.r = c->screen->r;
-        dst->g.bw = 0;
+        state->g.r = c->screen->r;
+        state->g.bw = 0;
 
-        dst->fullscreen = dst->floating = 1;
+        state->fullscreen = state->floating = 1;
         set_fullscreen_property(c->win);
 
         move_resize_client(c, 0);
