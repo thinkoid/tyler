@@ -1,4 +1,4 @@
-/* -*- mode: c++ -*- */
+/* -*- mode: c; -*- */
 
 #ifndef WM_ATOM_H
 #define WM_ATOM_H

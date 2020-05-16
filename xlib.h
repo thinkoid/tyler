@@ -1,4 +1,4 @@
-/* -*- mode: c++ -*- */
+/* -*- mode: c; -*- */
 
 #ifndef WM_XLIB_H
 #define WM_XLIB_H
