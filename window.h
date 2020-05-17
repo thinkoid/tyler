@@ -50,4 +50,6 @@ Window *all_windows();
 void pause_propagate(Window win, long mask);
 void resume_propagate(Window win, long mask);
 
+rect_t *geometry_of(Window win, rect_t *r);
+
 #endif /* WM_WINDOW_H */

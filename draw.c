@@ -54,23 +54,6 @@ void free_draw_state(draw_state_t *state)
         free(state);
 }
 
-static rect_t *get_drawable_geometry(Drawable drw, rect_t *r)
-{
-        int x, y;
-        unsigned w, h, bw, depth;
-
-        Window ignore;
-
-        if (0 == r)
-                r = malloc(sizeof *r);
-
-        if (XGetGeometry(DPY, drw, &ignore, &x, &y, &w, &h, &bw, &depth)) {
-                r->x = x; r->y = y; r->w = w; r->h = h;
-        }
-
-        return r;
-}
-
 void fill(draw_state_t *state, const rect_t *r, unsigned long bg)
 {
         XSetForeground(DPY, state->gc, bg);
@@ -85,7 +68,7 @@ void draw_text(draw_state_t *state, const char *s, int x, XftColor *fg)
         if (0 == s || 0 == s[0])
                 return;
 
-        get_drawable_geometry(state->drw, &g);
+        geometry_of(state->drw, &g);
         ASSERT (g.x <= x && x < g.x + g.w);
 
         a = FNT->ascent;
@@ -100,7 +83,7 @@ void draw_text(draw_state_t *state, const char *s, int x, XftColor *fg)
 
 void draw_rect(draw_state_t *state, const rect_t *r, XftColor *fg, int fill) {
         rect_t g = { 0 };
-        get_drawable_geometry(state->drw, &g);
+        geometry_of(state->drw, &g);
 
         XSetForeground(DPY, state->gc, fg->pixel);
 

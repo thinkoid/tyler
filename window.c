@@ -260,3 +260,21 @@ void resume_propagate(Window win, long mask)
         attr.event_mask = mask;
         XChangeWindowAttributes(DPY, win, CWEventMask, &attr);
 }
+
+rect_t *geometry_of(Window win, rect_t *r)
+{
+        int x, y;
+        unsigned w, h, bw, depth;
+
+        Window ignore;
+
+        if (0 == r)
+                r = malloc(sizeof *r);
+
+        if (XGetGeometry(DPY, drw, &ignore, &x, &y, &w, &h, &bw, &depth)) {
+                r->x = x; r->y = y; r->w = w; r->h = h;
+        }
+
+        return r;
+}
+
