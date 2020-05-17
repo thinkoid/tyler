@@ -4,15 +4,15 @@
 #include <font.h>
 #include <window.h>
 
-typedef struct draw_state {
+typedef struct draw_surface {
         Drawable drw;
         GC gc;
         XftDraw *xftdrw;
-} draw_state_t;
+} draw_surface_t;
 
-draw_state_t *make_draw_state(int width, int height)
+draw_surface_t *make_draw_surface(int width, int height)
 {
-        draw_state_t *p = malloc(sizeof *p);
+        draw_surface_t *p = malloc(sizeof *p);
         memset(p, 0, sizeof *p);
 
         p->drw = XCreatePixmap(
@@ -45,22 +45,22 @@ bottom:
         return 0;
 }
 
-void free_draw_state(draw_state_t *state)
+void free_draw_surface(draw_surface_t *surf)
 {
-        XftDrawDestroy(state->xftdrw);
-        XFreeGC(DPY, state->gc);
-        XFreePixmap(DPY, state->drw);
+        XftDrawDestroy(surf->xftdrw);
+        XFreeGC(DPY, surf->gc);
+        XFreePixmap(DPY, surf->drw);
 
-        free(state);
+        free(surf);
 }
 
-void fill(draw_state_t *state, const rect_t *r, unsigned long bg)
+void fill(draw_surface_t *surf, const rect_t *r, unsigned long bg)
 {
-        XSetForeground(DPY, state->gc, bg);
-        XFillRectangle(DPY, state->drw, state->gc, r->x, r->y, r->w, r->h);
+        XSetForeground(DPY, surf->gc, bg);
+        XFillRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
 }
 
-void draw_text(draw_state_t *state, const char *s, int x, XftColor *fg)
+void draw_text(draw_surface_t *surf, const char *s, int x, XftColor *fg)
 {
         int a, d, h, y;
         rect_t g = { 0 };
@@ -68,7 +68,7 @@ void draw_text(draw_state_t *state, const char *s, int x, XftColor *fg)
         if (0 == s || 0 == s[0])
                 return;
 
-        geometry_of(state->drw, &g);
+        geometry_of(surf->drw, &g);
         ASSERT (g.x <= x && x < g.x + g.w);
 
         a = FNT->ascent;
@@ -77,20 +77,18 @@ void draw_text(draw_state_t *state, const char *s, int x, XftColor *fg)
 
         y = g.y + (g.h / 2) - (h / 2) + a;
 
-        XftDrawStringUtf8(state->xftdrw, fg, FNT, x, y,
+        XftDrawStringUtf8(surf->xftdrw, fg, FNT, x, y,
                           (XftChar8*)s, strlen(s));
 }
 
-void draw_rect(draw_state_t *state, const rect_t *r, XftColor *fg, int fill) {
+void draw_rect(draw_surface_t *surf, const rect_t *r, XftColor *fg, int fill) {
         rect_t g = { 0 };
-        geometry_of(state->drw, &g);
+        geometry_of(surf->drw, &g);
 
-        XSetForeground(DPY, state->gc, fg->pixel);
+        XSetForeground(DPY, surf->gc, fg->pixel);
 
         if (fill)
-                XFillRectangle(DPY, state->drw, state->gc,
-                               r->x, r->y, r->w, r->h);
+                XFillRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
         else
-                XDrawRectangle(DPY, state->drw, state->gc,
-                               r->x, r->y, r->w, r->h);
+                XDrawRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
 }
