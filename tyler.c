@@ -7,6 +7,7 @@
 #include <cursor.h>
 #include <display.h>
 #include <error.h>
+#include <font.h>
 #include <window.h>
 #include <xlib.h>
 
@@ -2171,6 +2172,11 @@ static void init_cursors()
         atexit(free_cursors);
 }
 
+static void init_font()
+{
+        make_font(config_fontname());
+}
+
 static void init_screens()
 {
         make_screens();
@@ -2185,6 +2191,7 @@ static void init()
         init_atoms();
         init_colors();
         init_cursors();
+        init_font();
 
         init_error_handling();
         setup_root();
