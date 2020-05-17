@@ -16,3 +16,10 @@ although that WM does not use tags.
 Like monsterwm, tyler does not provide a bar. Instead it dumps its status to
 stdout to be consumed by an external script with a user's choice of status
 bar. Monsterwm project has a good deal of examples of such scripts.
+
+v0.4
+----
+
+Stable in daily use. Basic functionality is present, creation, resizing, and
+moving of windows, warping from a desktop to another, tagging, etc. There is no
+status bar.
