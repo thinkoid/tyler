@@ -9,7 +9,7 @@
 #include <X11/Xatom.h>
 
 static Atom g_atoms[4];
-static Atom g_netatoms[4];
+static Atom g_netatoms[5];
 
 void make_atoms()
 {
@@ -27,6 +27,7 @@ void make_atoms()
                 "_NET_ACTIVE_WINDOW",
                 "_NET_SUPPORTED",
                 "_NET_WM_STATE",
+                "_NET_WM_NAME",
                 "_NET_WM_STATE_FULLSCREEN"
                 /* clang-format on */
         };

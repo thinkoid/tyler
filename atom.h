@@ -18,6 +18,7 @@ enum netatom_sym {
         ATOM_NET_ACTIVE_WINDOW,
         ATOM_NET_SUPPORTED,
         ATOM_NET_WM_STATE,
+        ATOM_NET_WM_NAME,
         ATOM_NET_WM_STATE_FULLSCREEN
 };
 
@@ -37,6 +38,7 @@ size_t netatoms_size();
 #define NET_ACTIVE_WINDOW       (netatom(ATOM_NET_ACTIVE_WINDOW))
 #define NET_SUPPORTED           (netatom(ATOM_NET_SUPPORTED))
 #define NET_WM_STATE            (netatom(ATOM_NET_WM_STATE))
+#define NET_WM_NAME             (netatom(ATOM_NET_WM_NAME))
 #define NET_WM_STATE_FULLSCREEN (netatom(ATOM_NET_WM_STATE_FULLSCREEN))
 /* clang-format on */
 
