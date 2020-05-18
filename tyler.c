@@ -289,7 +289,6 @@ static int drawtag(screen_t *s, const char *tag,
 
         const int h = a + d;
 
-
         /*
          *     +---------- client window indicator
          *     |      +--- tag
@@ -364,15 +363,55 @@ static int drawtags(screen_t *s)
                             fg, bg);
         }
 
-        drawtag(s, "[]=", x, 0, 0, XFT_NORMAL_FG, XFT_NORMAL_BG);
-
-        return 0;
+        return drawtag(s, "[]=", x, 0, 0, XFT_NORMAL_FG, XFT_NORMAL_BG);
 }
 
-static int drawstatus(screen_t *s)
+static char *title_of(Window win, char *buf, size_t len)
 {
-        UNUSED(s);
-        return 0;
+        char *pbuf = 0;
+
+        if (0 == (pbuf = text_property(win, NET_WM_NAME, buf, len)))
+                pbuf = text_property(win, XA_WM_NAME, buf, len);
+
+        return pbuf;
+}
+
+static int drawstatus(screen_t *s, int left)
+{
+        int w;
+        rect_t r;
+
+        char buf[512] = { 0 }, *pbuf = buf;
+        size_t n = sizeof buf;
+
+        if (0 == (pbuf = title_of(ROOT, buf, n)))
+                strcpy((pbuf = buf), "tyler");
+
+        w = text_width(pbuf, FNT);
+
+        r.x = s->r.x + s->r.w - w;
+        r.y = 0;
+        r.w = w;
+        r.h = s->bh;
+
+        if (r.x < left) {
+                r.w -= left - r.x; r.x = left;
+
+                n = strlen(pbuf);
+                for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0)
+                        ;
+
+                if (0 == n)
+                        return left;
+        }
+
+        fill(DRW, &r, XFT_NORMAL_BG);
+        draw_text(DRW, pbuf, r.x, XFT_NORMAL_FG);
+
+        if (pbuf != buf)
+                free(pbuf);
+
+        return r.x;
 }
 
 static void drawtitle(screen_t *s, int left, int right)
@@ -384,6 +423,8 @@ static void drawtitle(screen_t *s, int left, int right)
 
 static void drawbar(screen_t *s)
 {
+        int left;
+
         rect_t r;
 
         r.x = s->r.x;
@@ -393,7 +434,9 @@ static void drawbar(screen_t *s)
 
         fill(DRW, &r, XFT_NORMAL_BG);
 
-        drawtitle(s, drawtags(s), drawstatus(s));
+        left = drawtags(s);
+        drawtitle(s, left, drawstatus(s, left));
+
         copy(DRW, s->bar, s->r.x, 0, s->r.w, s->bh, 0, 0);
 }
 

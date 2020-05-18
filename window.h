@@ -51,5 +51,6 @@ void pause_propagate(Window win, long mask);
 void resume_propagate(Window win, long mask);
 
 rect_t *geometry_of(Window win, rect_t *r);
+char *text_property(Window win, Atom atom, char *buf, size_t len);
 
 #endif /* WM_WINDOW_H */

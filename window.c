@@ -280,3 +280,45 @@ rect_t *geometry_of(Window win, rect_t *r)
         return r;
 }
 
+static char *copy_text_property(const char *src, char *buf, size_t len)
+{
+        char *pbuf = buf;
+
+        if (src && src[0]) {
+                size_t n = strlen(src);
+
+                if (0 == pbuf || len < n + 1)
+                        pbuf = malloc(n + 1);
+
+                strcpy(pbuf, src);
+        }
+
+        return pbuf;
+}
+
+char *text_property(Window win, Atom atom, char *buf, size_t len)
+{
+        char *pbuf = 0;
+
+        XTextProperty prop;
+        XGetTextProperty(DPY, win, &prop, atom);
+
+        if (prop.nitems) {
+                if (prop.encoding == XA_STRING)
+                        pbuf = copy_text_property((char *)prop.value, buf, len);
+                else {
+                        char** list = 0;
+                        int n;
+
+                        if (0 <= Xutf8TextPropertyToTextList(DPY, &prop, &list, &n) &&
+                            0 < n && list [0]) {
+                                pbuf = copy_text_property(list[0], buf, len);
+                                XFreeStringList(list);
+                        }
+                }
+
+                XFree(prop.value);
+        }
+
+        return pbuf;
+}
