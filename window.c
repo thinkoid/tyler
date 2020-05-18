@@ -1,11 +1,13 @@
 /* -*- mode: c; -*- */
 
-#include <window.h>
 #include <atom.h>
 #include <color.h>
 #include <config.h>
 #include <error.h>
+#include <window.h>
 #include <xlib.h>
+
+#include <stdlib.h>
 
 Window transient_for_property(Window win)
 {
@@ -271,7 +273,7 @@ rect_t *geometry_of(Window win, rect_t *r)
         if (0 == r)
                 r = malloc(sizeof *r);
 
-        if (XGetGeometry(DPY, drw, &ignore, &x, &y, &w, &h, &bw, &depth)) {
+        if (XGetGeometry(DPY, win, &ignore, &x, &y, &w, &h, &bw, &depth)) {
                 r->x = x; r->y = y; r->w = w; r->h = h;
         }
 
