@@ -416,9 +416,32 @@ static int drawstatus(screen_t *s, int left)
 
 static void drawtitle(screen_t *s, int left, int right)
 {
-        UNUSED(s);
-        UNUSED(left);
-        UNUSED(right);
+        client_t *c;
+
+        if (0 == (c = s->current))
+                return;
+
+        rect_t r;
+
+        char buf[512], *pbuf = buf;
+        size_t n = sizeof buf;
+
+        if (0 == (pbuf = title_of(c->win, buf, n)))
+                strcpy((pbuf = buf), "(null)");
+
+        r.x = left;
+        r.y = 0;
+        r.w = right - left;
+        r.h = s->bh;
+
+        fill(DRW, &r, s == current_screen ? XFT_SELECT_BG : XFT_NORMAL_BG);
+
+        n = strlen(pbuf);
+        for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0)
+                ;
+
+        if (n)
+                draw_text(DRW, pbuf, left, XFT_NORMAL_FG);
 }
 
 static void drawbar(screen_t *s)
