@@ -17,9 +17,13 @@ draw_surface_t *draw_surface();
 
 void free_draw_surface(draw_surface_t *surf);
 
-void fill(draw_surface_t * surf, const rect_t *r, unsigned long bg);
+void fill(draw_surface_t * surf, const rect_t *r, XftColor *bg);
 
 void draw_text(draw_surface_t *surf, const char *s, int x, XftColor *fg);
 void draw_rect(draw_surface_t *surf, const rect_t *r, XftColor *fg, int fill);
+
+void copy(draw_surface_t *surf,
+          Drawable drw, int x, int y, int w, int h,
+          int xto, int yto);
 
 #endif /* WM_DRAWABLE_H */

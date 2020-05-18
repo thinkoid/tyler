@@ -272,10 +272,129 @@ static void move_resize_client(client_t *c, rect_t *r)
                           g->r.h - 2 * g->bw);
 }
 
-static void drawbar(screen_t *s)
+static int text_width(const char *text, XftFont* font) {
+        XGlyphInfo x;
+        XftTextExtentsUtf8(DPY, font, (XftChar8*)text, strlen(text), &x);
+        return x.xOff;
+}
+
+static int drawtag(screen_t *s, const char *tag,
+                   int x, int selected, int filled,
+                   XftColor *fg, XftColor *bg)
+{
+        const int w = text_width(tag, FNT);
+
+        const int a = FNT->ascent;
+        const int d = FNT->descent;
+
+        const int h = a + d;
+
+
+        /*
+         *     +---------- client window indicator
+         *     |      +--- tag
+         *     |      |
+         *     v      v
+         *  +-----+-------+-----+
+         *  |  □  |  /|   |     |
+         *  |     |   |   |     |
+         *  +-----+-------+-----+
+         *  | <-> | <---> | <-> |
+         *    h/2     w     h/2
+         */
+        rect_t r = { 0 };
+
+        r.x = x;
+        r.y = s->r.y;
+        r.w = h + w;
+        r.h = s->bh;
+
+        fill(DRW, &r, bg);
+
+        if (selected) {
+                rect_t q = { 0, 0, 3, 3 };
+
+                q.x = r.x + 1;
+                q.y = r.y + 1;
+
+                draw_rect(DRW, &q, fg, filled);
+        }
+
+        draw_text(DRW, tag, x += h/2, fg);
+
+        return x + w + h;
+}
+
+static int drawtags(screen_t *s)
+{
+        int x = s->r.x;
+
+        size_t i = 0;
+        char tag[2] = { 0 };
+
+        client_t *c = current_screen->current;
+
+        const int cct = c ? state_of(c)->tags : 0;
+        unsigned occ = 0, urg = 0;
+
+        for (c = s->head; c; c = c->next) {
+                state_t *state = state_of(c);
+
+                occ |= state->tags;
+
+                if (state->urgent)
+                        urg |= state->tags;
+        }
+
+        for (i = 0; i < 9; ++i) {
+                int tagged = s->tags & (1U << i);
+
+                XftColor *fg = tagged ? XFT_SELECT_FG : XFT_NORMAL_FG;
+                XftColor *bg = tagged ? XFT_SELECT_BG : XFT_NORMAL_BG;
+
+                if (urg & (1U << i)) {
+                        XftColor *tmp = fg; fg = bg; bg = tmp;
+                }
+
+                tag[0] = i + 1 + '0';
+
+                x = drawtag(s, tag, x,
+                            occ & (1U << i),  /* selected */
+                            cct & (1U << i),  /* filled rectangle */
+                            fg, bg);
+        }
+
+        drawtag(s, "[]=", x, 0, 0, XFT_NORMAL_FG, XFT_NORMAL_BG);
+
+        return 0;
+}
+
+static int drawstatus(screen_t *s)
 {
         UNUSED(s);
-        XSync (DPY, 0);
+        return 0;
+}
+
+static void drawtitle(screen_t *s, int left, int right)
+{
+        UNUSED(s);
+        UNUSED(left);
+        UNUSED(right);
+}
+
+static void drawbar(screen_t *s)
+{
+        rect_t r;
+
+        r.x = s->r.x;
+        r.y = 0;
+        r.w = s->r.w;
+        r.h = s->bh;
+
+        fill(DRW, &r, XFT_NORMAL_BG);
+
+        drawtitle(s, drawtags(s), drawstatus(s));
+        copy(DRW, s->bar, s->r.x, 0, s->r.w, s->bh, 0, 0);
 }
 
 static void drawbars()

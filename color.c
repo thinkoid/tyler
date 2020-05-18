@@ -3,8 +3,6 @@
 #include <color.h>
 #include <display.h>
 
-#include <X11/Xft/Xft.h>
-
 static XftColor g_colors[6];
 
 void make_colors(const char **pp, size_t n)
@@ -33,8 +31,14 @@ void free_colors()
         }
 }
 
-color_t color(enum color_type type)
+unsigned long color(enum color_type type)
 {
         ASSERT(0 <= type && type < SIZEOF(g_colors));
         return g_colors[type].pixel;
+}
+
+XftColor *xftcolor(enum color_type type)
+{
+        ASSERT(0 <= type && type < SIZEOF(g_colors));
+        return g_colors + type;
 }
