@@ -311,10 +311,10 @@ static int drawtag(screen_t *s, const char *tag,
         fill(DRW, &r, bg);
 
         if (selected) {
-                rect_t q = { 0, 0, 3, 3 };
+                rect_t q = { 0, 0, 9, 9 };
 
-                q.x = r.x + 1;
-                q.y = r.y + 1;
+                q.x = r.x + 3;
+                q.y = r.y + 3;
 
                 draw_rect(DRW, &q, fg, filled);
         }
@@ -466,9 +466,8 @@ static void drawbar(screen_t *s)
 static void drawbars()
 {
         screen_t *s = screen_head;
-
-        for (; s; s = s->next)
-                drawbar(s);
+        for (drawbar(s); s; drawbar(s), s = s->next)
+                ;
 }
 
 static void tile(screen_t *s)
@@ -1187,6 +1186,9 @@ static void free_screens()
         client_t *c, *cnext;
 
         for (; s; snext = s->next, free(s), s = snext) {
+                if (!send(s->bar, WM_DELETE_WINDOW))
+                        zap_window(s->bar);
+
                 c = s->head;
                 for (; c; cnext = c->next, free(c), c = cnext)
                         if (!send(c->win, WM_DELETE_WINDOW))
@@ -1198,6 +1200,8 @@ static int update_screen(screen_t *s, rect_t *r)
 {
         if (memcmp(r, &s->r, sizeof *r)) {
                 memcpy(&s->r, r, sizeof *r);
+
+                XMoveResizeWindow(DPY, s->bar, s->r.x, s->r.y, s->r.w, s->bh);
 
                 tile(s);
                 stack(s);
@@ -1280,9 +1284,6 @@ static int update_screens()
         current_screen->current = stack_top(current_screen);
 
         remap_quiet();
-
-        free_draw_surface(DRW);
-        DRW = make_draw_surface(display_width(), config_bar_height());
 
         drawbars();
 
@@ -2171,8 +2172,11 @@ static int configure_notify_handler(XEvent *arg)
 {
         XConfigureEvent *ev = &arg->xconfigure;
 
-        if (ROOT == ev->window)
+        if (ROOT == ev->window) {
+                free_draw_surface(DRW);
+                DRW = make_draw_surface(ev->width, config_bar_height());
                 update_screens();
+        }
 
         return 0;
 }
