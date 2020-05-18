@@ -6,6 +6,7 @@
 #include <config.h>
 #include <cursor.h>
 #include <display.h>
+#include <draw.h>
 #include <error.h>
 #include <font.h>
 #include <window.h>
@@ -112,8 +113,10 @@ typedef struct client {
 struct screen {
         rect_t r;
 
-        unsigned tags;
+        Window bar;
         int showbar, bh;
+
+        unsigned tags;
 
         int master_size;
         float master_ratio;
@@ -124,6 +127,9 @@ struct screen {
         /* Next screen in screen list */
         screen_t *next;
 };
+
+static draw_surface_t *drw /* = 0 */;
+#define DRW drw
 
 static screen_t *screen_head /* = 0 */, *current_screen /* = 0 */;
 
@@ -180,26 +186,30 @@ static int is_visible_tile(client_t *c)
         return is_visible(c) && is_tile(c);
 }
 
-static void get_tiles_geometries(rect_t *r, size_t size, float ratio, rect_t *rs,
-                                 size_t n)
+static void get_tiles_geometries(screen_t *s, rect_t *rs, size_t n)
 {
         int x, y, w, h, left, dist;
 
-        UNUSED(size);
+        rect_t r = s->r;
+
+        if (s->showbar) {
+                r.y  = s->bh;
+                r.h -= s->bh;
+        }
 
         switch (n) {
         case 1:
-                memcpy(rs, r, sizeof *r);
+                memcpy(rs, &r, sizeof *rs);
         case 0:
                 break;
 
         default:
-                x = r->x;
-                y = r->y;
-                w = r->w;
-                h = r->h;
+                x = r.x;
+                y = r.y;
+                w = r.w;
+                h = r.h;
 
-                left = (int)(w * ratio);
+                left = (int)(w * s->master_ratio);
 
                 rs[0].x = x;
                 rs[0].y = y;
@@ -262,6 +272,20 @@ static void move_resize_client(client_t *c, rect_t *r)
                           g->r.h - 2 * g->bw);
 }
 
+static void drawbar(screen_t *s)
+{
+        UNUSED(s);
+        XSync (DPY, 0);
+}
+
+static void drawbars()
+{
+        screen_t *s = screen_head;
+
+        for (; s; s = s->next)
+                drawbar(s);
+}
+
 static void tile(screen_t *s)
 {
         rect_t rs[64], *prs = rs, *r;
@@ -269,14 +293,17 @@ static void tile(screen_t *s)
         client_t *c;
         size_t n;
 
+        drawbar(s);
+
         for (n = 0, c = s->head; c; c = c->next)
-                if (is_visible_tile(c)) ++n;
+                if (is_visible_tile(c))
+                        ++n;
 
         if (n > SIZEOF(rs)) {
                 prs = malloc(n * sizeof *prs);
         }
 
-        get_tiles_geometries(&s->r, s->master_size, s->master_ratio, prs, n);
+        get_tiles_geometries(s, prs, n);
         r = prs;
 
         for (c = s->head; c; c = c->next)
@@ -285,24 +312,6 @@ static void tile(screen_t *s)
 
         if (prs != rs)
                 free(prs);
-}
-
-static void print_status()
-{
-        int i;
-        screen_t *s;
-
-        for (i = 0, s = screen_head; s; s = s->next, ++i) {
-                int n = 0, urgent = 0;
-
-                client_t *c = s->head;
-                for (; c; ++n, urgent |= state_of(c)->urgent, c = c->next) ;
-
-                printf("%d:%d:%d:%d ", i, n, s == current_screen, urgent);
-        }
-
-        printf("\n");
-        fflush(stdout);
 }
 
 /**********************************************************************/
@@ -419,7 +428,30 @@ static rect_t *get_all_screens_geometries(rect_t *buf, size_t *buflen)
         }
 }
 
-static screen_t *make_screen(rect_t *r)
+static Window make_bar(int x, int y, int w, int h)
+{
+        Window win;
+        XClassHint hints = { "tyler", "tyler" };
+
+        XSetWindowAttributes wa = { 0 };
+
+        wa.override_redirect = True;
+        wa.background_pixmap = ParentRelative;
+        wa.event_mask = ExposureMask;
+
+        win = XCreateWindow(
+                DPY, ROOT, x, y, w, h, 0, DefaultDepth(DPY, SCRN),
+                CopyFromParent, DefaultVisual(DPY, SCRN),
+                CWOverrideRedirect|CWBackPixmap|CWEventMask, &wa);
+
+        XDefineCursor(DPY, win, NORMAL_CURSOR);
+        XMapRaised(DPY, win);
+        XSetClassHint(DPY, win, &hints);
+
+        return win;
+}
+
+static screen_t *make_screen(const rect_t *r)
 {
         screen_t *s = malloc(sizeof *s);
         memset(s, 0, sizeof *s);
@@ -433,6 +465,8 @@ static screen_t *make_screen(rect_t *r)
 
         s->showbar = config_showbar();
         s->bh = config_bar_height();
+
+        s->bar = make_bar(r->x, r->y, r->w, s->bh);
 
         s->master_size = config_master_size();
         s->master_ratio = config_master_ratio();
@@ -902,8 +936,6 @@ static void unmanage(client_t *c)
         }
 
         free(c);
-
-        print_status();
 }
 
 static client_t *manage(Window win, XWindowAttributes *attr)
@@ -934,8 +966,6 @@ static client_t *manage(Window win, XWindowAttributes *attr)
                         focus(s->current);
         }
 
-        print_status();
-
         return c;
 }
 
@@ -962,7 +992,8 @@ static void make_screens()
         if (prs != rs)
                 free(prs);
 
-        print_status();
+        ASSERT(0 == DRW);
+        DRW = make_draw_surface(display_width(), config_bar_height());
 }
 
 static void free_screens()
@@ -991,6 +1022,16 @@ static int update_screen(screen_t *s, rect_t *r)
         }
 
         return 0;
+}
+
+static void remap_quiet()
+{
+        pause_propagate(ROOT, SubstructureNotifyMask);
+
+        map_visible();
+        unmap_invisible();
+
+        resume_propagate(ROOT, ROOTMASK);
 }
 
 static int update_screens()
@@ -1050,23 +1091,20 @@ static int update_screens()
         current_screen = pscur;
         ASSERT(current_screen);
 
+        unfocus(current_screen->current);
         current_screen->current = stack_top(current_screen);
 
-        {
-                pause_propagate(ROOT, SubstructureNotifyMask);
+        remap_quiet();
 
-                map_visible();
-                unmap_invisible();
+        free_draw_surface(DRW);
+        DRW = make_draw_surface(display_width(), config_bar_height());
 
-                resume_propagate(ROOT, ROOTMASK);
-        }
+        drawbars();
 
         tile(current_screen);
         stack(current_screen);
 
         focus(current_screen->current);
-
-        print_status();
 
         if (prs != rs)
                 free(prs);
@@ -1602,24 +1640,15 @@ static int resize_client()
 
 static void do_tag()
 {
-        {
-                pause_propagate(ROOT, SubstructureNotifyMask);
+        unfocus(current_screen->current);
+        current_screen->current = stack_top(current_screen);
 
-                unfocus(current_screen->current);
-                current_screen->current = stack_top(current_screen);
-
-                map_visible();
-                unmap_invisible();
-
-                resume_propagate(ROOT, ROOTMASK);
-        }
+        remap_quiet();
 
         tile(current_screen);
         stack(current_screen);
 
         focus(current_screen->current);
-
-        print_status();
 }
 
 static int tag(unsigned n)
@@ -1889,6 +1918,16 @@ static int focusin_handler(XEvent *arg)
         return 0;
 }
 
+static int expose_handler(XEvent *arg)
+{
+        XExposeEvent *ev = &arg->xexpose;
+
+        if (0 == ev->count)
+                drawbar(screen_for(ev->window));
+
+        return 0;
+}
+
 static int destroy_notify_handler(XEvent *arg)
 {
         client_t *c;
@@ -1961,7 +2000,9 @@ static int property_notify_handler(XEvent *arg)
         if (PropertyDelete == ev->state)
                 return 0;
 
-        if ((c = client_for(ev->window))) {
+        if (ROOT == ev->window && XA_WM_NAME == ev->atom)
+                drawbar(current_screen);
+        else if ((c = client_for(ev->window))) {
                 switch(ev->atom) {
                 case XA_WM_TRANSIENT_FOR:
                         if (!is_floating(c) && transient_client_for(c->win)) {
@@ -1982,6 +2023,10 @@ static int property_notify_handler(XEvent *arg)
                 default:
                         break;
                 }
+
+                if (XA_WM_NAME == ev->atom || NET_WM_NAME == ev->atom)
+                        if (c == current_screen->current)
+                                drawbar(current_screen);
         }
 
         return 0;
@@ -2026,7 +2071,9 @@ static int handle_event(XEvent *arg)
                 enter_notify_handler, /* 7 */
                 0,
                 focusin_handler, /* 9 */
-                0, 0, 0, 0, 0, 0, 0,
+                0, 0,
+                expose_handler, /* 12 */
+                0, 0, 0, 0,
                 destroy_notify_handler, /* 17 */
                 unmap_notify_handler,  /* 18 */
                 0,
