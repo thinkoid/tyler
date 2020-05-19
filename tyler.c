@@ -998,7 +998,7 @@ static void stack(screen_t *s)
         client_t *c, *cur;
 
         Window ws[64], *pws = ws;
-        size_t n = 0, i = 0, j = 0, k = 0;
+        size_t n = 1, i = 1, j = 1, k = 1;
 
         for (c = s->head; c; c = c->next) {
                 if (is_visible(c)) {
@@ -1013,12 +1013,14 @@ static void stack(screen_t *s)
                 }
         }
 
-        if (0 == n)
+        if (1 == n)
                 return;
 
         if (n > SIZEOF(ws)) {
                 pws = malloc(n * sizeof *pws);
         }
+
+        pws[0] = s->bar;
 
         if ((cur = s->current)) {
                 if (is_fft(cur)) {
@@ -1048,10 +1050,8 @@ static void stack(screen_t *s)
                 }
         }
 
-        if (n) XRestackWindows(DPY, pws, n);
-
-        /* TODO : integrate above */
-        XRaiseWindow(DPY, s->bar);
+        if (n)
+                XRestackWindows(DPY, pws, n);
 
         /*
          * An EnterNotify event is also generated when a window is mapped over
