@@ -925,6 +925,9 @@ static void push_front(client_t *c)
 
 static void stack_push_front(client_t *c)
 {
+        if (0 == c)
+                return;
+
         c->focus_next = c->screen->focus_head;
         c->screen->focus_head = c;
 
@@ -936,6 +939,9 @@ static void push_back(client_t *c)
 {
         client_t **pptr;
 
+        if (0 == c)
+                return;
+
         for (pptr = &c->screen->head; *pptr; pptr = &(*pptr)->next)
                 ;
 
@@ -946,6 +952,9 @@ static void stack_push_back(client_t *c)
 {
         client_t **pptr;
 
+        if (0 == c)
+                return;
+
         for (pptr = &c->screen->focus_head; *pptr; pptr = &(*pptr)->focus_next)
                 ;
 
@@ -954,9 +963,12 @@ static void stack_push_back(client_t *c)
 
 static void pop(client_t *c)
 {
-        client_t **pptr = &c->screen->head;
+        client_t **pptr;
 
-        for (; *pptr && *pptr != c; pptr = &(*pptr)->next)
+        if (0 == c)
+                return;
+
+        for (pptr = &c->screen->head; *pptr && *pptr != c; pptr = &(*pptr)->next)
                 ;
 
         ASSERT(*pptr);
@@ -967,9 +979,12 @@ static void pop(client_t *c)
 
 static client_t *stack_top(screen_t *s)
 {
-        client_t *c = s->focus_head;
+        client_t *c;
 
-        for (; c && !is_visible(c); c = c->focus_next)
+        if (0 == s)
+                return 0;
+
+        for (c = s->focus_head; c && !is_visible(c); c = c->focus_next)
                 ;
 
         return c;
@@ -978,6 +993,9 @@ static client_t *stack_top(screen_t *s)
 static void stack_pop(client_t *c)
 {
         client_t **pptr;
+
+        if (0 == c)
+                return;
 
         pptr = &c->screen->focus_head;
         for (; *pptr && *pptr != c; pptr = &(*pptr)->focus_next)
