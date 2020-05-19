@@ -294,12 +294,12 @@ static int drawtag(screen_t *s, const char *tag,
          *     |      +--- tag
          *     |      |
          *     v      v
-         *  +-----+-------+-----+
-         *  |  □  |  /|   |     |
-         *  |     |   |   |     |
-         *  +-----+-------+-----+
-         *  | <-> | <---> | <-> |
-         *    h/2     w     h/2
+         *  +-----+-------+
+         *  |  □  |  /|   |
+         *  |     |   |   |
+         *  +-----+-------+
+         *  | <-> | <---> |
+         *    h/2     w
          */
         rect_t r = { 0 };
 
@@ -311,7 +311,7 @@ static int drawtag(screen_t *s, const char *tag,
         fill(DRW, &r, bg);
 
         if (selected) {
-                rect_t q = { 0, 0, 9, 9 };
+                rect_t q = { 0, 0, 5, 5 };
 
                 q.x = r.x + 3;
                 q.y = r.y + 3;
@@ -321,7 +321,7 @@ static int drawtag(screen_t *s, const char *tag,
 
         draw_text(DRW, tag, x += h/2, fg);
 
-        return x + w + h;
+        return x + w + h /2;
 }
 
 static int drawtags(screen_t *s)
