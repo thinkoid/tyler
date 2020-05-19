@@ -1094,14 +1094,11 @@ static void unfocus(client_t *c)
 
 static void focus(client_t *c)
 {
-        screen_t *s;
+        screen_t *s, *other;
 
         if (0 == c) {
                 unfocus(current_screen->current);
-                drawbar(current_screen);
-
                 reset_focus_property();
-
                 return;
         }
 
@@ -1109,9 +1106,11 @@ static void focus(client_t *c)
 
         if (s != current_screen) {
                 unfocus(current_screen->current);
-                drawbar(current_screen);
 
+                other = current_screen;
                 current_screen = s;
+
+                drawbar(other);
         }
 
         if (c != current_screen->current) {
@@ -1138,6 +1137,7 @@ static void unmanage(client_t *c)
 {
         pop(c);
         stack_pop(c);
+
         free(c);
 }
 
@@ -1801,10 +1801,14 @@ static int resize_client()
         return 0;
 }
 
-static void do_tag()
+static int do_tag()
 {
         remap_quiet();
+
         focus(stack_top(current_screen));
+        drawbar(current_screen);
+
+        return 0;
 }
 
 static int tag(unsigned n)
@@ -1813,9 +1817,8 @@ static int tag(unsigned n)
                 return 0;
 
         current_screen->tags = n;
-        do_tag();
 
-        return 0;
+        return do_tag();
 }
 
 #define TAG_DEF(x) static int WM_CAT(tag_, x)() { return tag(1U << (x - 1)); }
@@ -2144,7 +2147,7 @@ static int property_notify_handler(XEvent *arg)
                 return 0;
 
         if (ROOT == ev->window && XA_WM_NAME == ev->atom)
-                drawbar(current_screen);
+                drawbars();
         else if ((c = client_for(ev->window))) {
                 switch(ev->atom) {
                 case XA_WM_TRANSIENT_FOR:
@@ -2168,8 +2171,7 @@ static int property_notify_handler(XEvent *arg)
                 }
 
                 if (XA_WM_NAME == ev->atom || NET_WM_NAME == ev->atom)
-                        if (c == current_screen->current)
-                                drawbar(current_screen);
+                        drawbar(current_screen);
         }
 
         return 0;
