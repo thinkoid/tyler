@@ -648,7 +648,7 @@ static screen_t *make_screen(const rect_t *r)
         s->tags = 1;
 
         s->showbar = config_showbar();
-        s->bh = config_bar_height();
+        s->bh = FNT->height;
 
         s->bar = make_bar(r->x, r->y, r->w, s->bh);
 
@@ -1186,7 +1186,7 @@ static void make_screens()
                 free(prs);
 
         ASSERT(0 == DRW);
-        DRW = make_draw_surface(display_width(), config_bar_height());
+        DRW = make_draw_surface(display_width(), FNT->height);
 }
 
 static void free_screens()
@@ -2124,7 +2124,7 @@ static int configure_notify_handler(XEvent *arg)
 
         if (ROOT == ev->window) {
                 free_draw_surface(DRW);
-                DRW = make_draw_surface(ev->width, config_bar_height());
+                DRW = make_draw_surface(ev->width, FNT->height);
 
                 if (update_screens()) {
                         focus(current_screen->current);

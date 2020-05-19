@@ -6,7 +6,6 @@
 /* clang-format off */
 static int g_showbar      =  1;
 static int g_border_width =  1;
-static int g_bar_height   = 32;
 
 static int   g_master_size  = 1;
 static float g_master_ratio = .5f;
@@ -66,11 +65,6 @@ int config_showbar()
 int config_border_width()
 {
         return g_border_width;
-}
-
-int config_bar_height()
-{
-        return g_bar_height;
 }
 
 int config_master_size()
