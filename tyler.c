@@ -418,16 +418,10 @@ static void drawtitle(screen_t *s, int left, int right)
 {
         client_t *c;
 
-        if (0 == (c = s->current))
-                return;
-
-        rect_t r;
-
         char buf[512], *pbuf = buf;
         size_t n = sizeof buf;
 
-        if (0 == (pbuf = title_of(c->win, buf, n)))
-                strcpy((pbuf = buf), "(null)");
+        rect_t r;
 
         r.x = left;
         r.y = 0;
@@ -435,6 +429,12 @@ static void drawtitle(screen_t *s, int left, int right)
         r.h = s->bh;
 
         fill(DRW, &r, s == current_screen ? XFT_SELECT_BG : XFT_NORMAL_BG);
+
+        if (0 == (c = s->current))
+                return;
+
+        if (0 == (pbuf = title_of(c->win, buf, n)))
+                strcpy((pbuf = buf), "(null)");
 
         n = strlen(pbuf);
         for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0)
