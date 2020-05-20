@@ -1151,10 +1151,46 @@ static void focus(client_t *c)
         drawbar(current_screen);
 }
 
+static void update_client_list()
+{
+        screen_t *s;
+        client_t *c;
+
+        long buf[512], *pbuf = buf;
+        size_t i = 0, n = sizeof buf / sizeof *buf;
+
+        for (s = screen_head; s; s = s->next) {
+                for (c = s->head; c; c = c->next) {
+                        if (i >= n) {
+                                long *p = pbuf;
+
+                                pbuf = malloc(2 * n * sizeof *pbuf);
+                                memcpy(pbuf, p, n * sizeof *pbuf);
+
+                                n *= 2;
+
+                                if (p != buf)
+                                        free(p);
+                        }
+
+                        pbuf[i++] = c->win;
+                }
+        }
+
+        if (i)
+                XChangeProperty(DPY, ROOT, NET_CLIENT_LIST, XA_WINDOW, 32,
+                                PropModeReplace, (unsigned char *)pbuf, i);
+
+        if (pbuf != buf)
+                free(pbuf);
+}
+
 static void unmanage(client_t *c)
 {
         pop(c);
         stack_pop(c);
+
+        update_client_list();
 
         free(c);
 }
@@ -1171,6 +1207,8 @@ static client_t *manage(Window win, XWindowAttributes *attr)
 
         push_front(c);
         stack_push_back(c);
+
+        update_client_list();
 
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
