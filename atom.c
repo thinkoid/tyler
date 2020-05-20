@@ -8,8 +8,7 @@
 
 #include <X11/Xatom.h>
 
-static Atom g_atoms[4];
-static Atom g_netatoms[6];
+static Atom g_atoms[10];
 
 void make_atoms()
 {
@@ -18,14 +17,9 @@ void make_atoms()
                 "WM_PROTOCOLS",
                 "WM_DELETE_WINDOW",
                 "WM_STATE",
-                "WM_TAKE_FOCUS"
-                /* clang-format on */
-        };
-
-        static const char *netnames[] = {
-                /* clang-format off */
-                "_NET_ACTIVE_WINDOW",
+                "WM_TAKE_FOCUS",
                 "_NET_SUPPORTED",
+                "_NET_ACTIVE_WINDOW",
                 "_NET_CLIENT_LIST",
                 "_NET_WM_STATE",
                 "_NET_WM_NAME",
@@ -36,13 +30,9 @@ void make_atoms()
         size_t i;
 
         ASSERT(SIZEOF(g_atoms) == SIZEOF(names));
-        ASSERT(SIZEOF(g_netatoms) == SIZEOF(netnames));
 
         for (i = 0; i < SIZEOF(g_atoms); ++i)
                 g_atoms[i] = XInternAtom(DPY, names[i], 0);
-
-        for (i = 0; i < SIZEOF(g_netatoms); ++i)
-                g_netatoms[i] = XInternAtom(DPY, netnames[i], 0);
 }
 
 Atom atom(enum atom_sym sym)
@@ -51,20 +41,14 @@ Atom atom(enum atom_sym sym)
         return g_atoms[sym];
 }
 
-Atom netatom(enum netatom_sym sym)
-{
-        ASSERT(0 <= sym && sym <= SIZEOF(g_netatoms));
-        return g_netatoms[sym];
-}
-
 Atom *netatoms()
 {
-        return g_netatoms;
+        return g_atoms + ATOM_NET_SUPPORTED;
 }
 
 size_t netatoms_size()
 {
-        return SIZEOF(g_netatoms);
+        return SIZEOF(g_atoms) - ATOM_NET_SUPPORTED;
 }
 
 Atom atomic_property(Window win, Atom prop)
