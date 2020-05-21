@@ -56,7 +56,7 @@ static int error_handler(Display *dpy, XErrorEvent *ee)
         return default_error_handler(dpy, ee);
 }
 
-void init_error_handling()
+void init_error_handling(void)
 {
         ASSERT(0 == default_error_handler);
         default_error_handler = XSetErrorHandler(aborting_error_handler);
@@ -68,12 +68,12 @@ void init_error_handling()
         XSync(DPY, 0);
 }
 
-void pause_error_handling()
+void pause_error_handling(void)
 {
         XSetErrorHandler(null_error_handler);
 }
 
-void resume_error_handling()
+void resume_error_handling(void)
 {
         XSetErrorHandler(error_handler);
 }

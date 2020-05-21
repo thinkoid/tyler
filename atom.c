@@ -10,7 +10,7 @@
 
 static Atom g_atoms[10];
 
-void make_atoms()
+void make_atoms(void)
 {
         static const char *names[] = {
                 /* clang-format off */

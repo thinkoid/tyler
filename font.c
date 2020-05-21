@@ -22,12 +22,12 @@ XftFont *make_font(const char *s)
         return (g_font = make_xftfont(DPY, s));
 }
 
-XftFont *font()
+XftFont *font(void)
 {
         return g_font;
 }
 
-void free_font()
+void free_font(void)
 {
         XftFontClose(DPY, g_font);
         g_font = 0;

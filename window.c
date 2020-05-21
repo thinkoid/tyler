@@ -70,7 +70,7 @@ int is_viewable(Window win)
                IsViewable == attr.map_state;
 }
 
-Window focused_window()
+Window focused_window(void)
 {
         Atom unused_type;
         int unused_format;
@@ -97,7 +97,7 @@ void send_focus(Window win)
         send(win, WM_TAKE_FOCUS);
 }
 
-void reset_focus_property()
+void reset_focus_property(void)
 {
         XSetInputFocus(DPY, ROOT, RevertToPointerRoot, CurrentTime);
         XDeleteProperty(DPY, ROOT, NET_ACTIVE_WINDOW);
@@ -238,7 +238,7 @@ void zap_window(Window win)
         XUngrabServer(DPY);
 }
 
-Window *all_windows()
+Window *all_windows(void)
 {
         Window root, parent, *pbuf = 0;
         unsigned len;
@@ -263,7 +263,7 @@ void resume_propagate(Window win, long mask)
         XChangeWindowAttributes(DPY, win, CWEventMask, &attr);
 }
 
-rect_t *geometry_of(Window win, rect_t *r)
+struct rect *geometry_of(Window win, struct rect *r)
 {
         int x, y;
         unsigned w, h, bw, depth;

@@ -14,7 +14,7 @@ enum cursor_type { CURSOR_NORMAL, CURSOR_RESIZE, CURSOR_MOVE };
 cursor_t cursor(enum cursor_type type);
 
 void make_cursors(const int *p, size_t n);
-void free_cursors();
+void free_cursors(void);
 
 /* clang-format off */
 #define NORMAL_CURSOR (cursor(CURSOR_NORMAL))

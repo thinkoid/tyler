@@ -8,10 +8,10 @@
 #include <X11/Xft/Xft.h>
 #include <fontconfig/fontconfig.h>
 
-XftFont *font();
+XftFont *font(void);
 XftFont *make_font(const char *);
 
-void free_font();
+void free_font(void);
 
 #define FNT (font())
 

@@ -4,15 +4,15 @@
 #include <font.h>
 #include <window.h>
 
-typedef struct draw_surface {
+struct draw_surface {
         Drawable drw;
         GC gc;
         XftDraw *xftdrw;
-} draw_surface_t;
+};
 
-draw_surface_t *make_draw_surface(int width, int height)
+struct draw_surface *make_draw_surface(int width, int height)
 {
-        draw_surface_t *p = malloc(sizeof *p);
+        struct draw_surface *p = malloc(sizeof *p);
         memset(p, 0, sizeof *p);
 
         p->drw = XCreatePixmap(
@@ -45,7 +45,7 @@ bottom:
         return 0;
 }
 
-void free_draw_surface(draw_surface_t *surf)
+void free_draw_surface(struct draw_surface *surf)
 {
         XftDrawDestroy(surf->xftdrw);
         XFreeGC(DPY, surf->gc);
@@ -54,16 +54,16 @@ void free_draw_surface(draw_surface_t *surf)
         free(surf);
 }
 
-void fill(draw_surface_t *surf, const rect_t *r, XftColor *bg)
+void fill(struct draw_surface *surf, const struct rect *r, XftColor *bg)
 {
         XSetForeground(DPY, surf->gc, bg->pixel);
         XFillRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
 }
 
-void draw_text(draw_surface_t *surf, const char *s, int x, XftColor *fg)
+void draw_text(struct draw_surface *surf, const char *s, int x, XftColor *fg)
 {
         int a, d, h, y;
-        rect_t g = { 0 };
+        struct rect g = { 0 };
 
         if (0 == s || 0 == s[0])
                 return;
@@ -81,8 +81,8 @@ void draw_text(draw_surface_t *surf, const char *s, int x, XftColor *fg)
                           (XftChar8*)s, strlen(s));
 }
 
-void draw_rect(draw_surface_t *surf, const rect_t *r, XftColor *fg, int fill) {
-        rect_t g = { 0 };
+void draw_rect(struct draw_surface *surf, const struct rect *r, XftColor *fg, int fill) {
+        struct rect g = { 0 };
         geometry_of(surf->drw, &g);
 
         XSetForeground(DPY, surf->gc, fg->pixel);
@@ -93,7 +93,7 @@ void draw_rect(draw_surface_t *surf, const rect_t *r, XftColor *fg, int fill) {
                 XDrawRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
 }
 
-void copy(draw_surface_t *surf,
+void copy(struct draw_surface *surf,
           Drawable drw, int x, int y, int w, int h,
           int xto, int yto)
 {

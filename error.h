@@ -9,9 +9,9 @@
 
 typedef int (*error_handler_type)(Display *, XErrorEvent *);
 
-void init_error_handling();
+void init_error_handling(void);
 
-void pause_error_handling();
-void resume_error_handling();
+void pause_error_handling(void);
+void resume_error_handling(void);
 
 #endif /* WM_ERROR_H */

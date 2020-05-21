@@ -25,7 +25,7 @@ void make_cursors(const int *p, size_t n)
         }
 }
 
-void free_cursors()
+void free_cursors(void)
 {
         size_t i;
 

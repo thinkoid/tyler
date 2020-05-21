@@ -5,17 +5,17 @@
 
 #include <defs.h>
 
-typedef struct ext {
+struct ext {
         int w, h;
-} ext_t;
+};
 
-typedef struct rect {
+struct rect {
         int x, y, w, h;
-} rect_t;
+};
 
-typedef struct geom {
-        rect_t r;
+struct geom {
+        struct rect r;
         int bw;
-} geom_t;
+};
 
 #endif /* WM_GEOMETRY_H */

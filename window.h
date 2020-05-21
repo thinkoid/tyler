@@ -21,12 +21,12 @@ void set_wm_state(Window win, long state);
 int is_iconic(Window win);
 int is_viewable(Window win);
 
-Window focused_window();
+Window focused_window(void);
 
 int has_focus(Window win);
 void send_focus(Window win);
 
-void reset_focus_property();
+void reset_focus_property(void);
 void set_focus_property(Window win);
 
 void reset_urgent(Window);
@@ -45,12 +45,12 @@ int send(Window, Atom);
 
 void zap_window(Window win);
 
-Window *all_windows();
+Window *all_windows(void);
 
 void pause_propagate(Window win, long mask);
 void resume_propagate(Window win, long mask);
 
-rect_t *geometry_of(Window win, rect_t *r);
+struct rect *geometry_of(Window win, struct rect *r);
 char *text_property(Window win, Atom atom, char *buf, size_t len);
 
 #endif /* WM_WINDOW_H */

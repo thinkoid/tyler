@@ -7,7 +7,7 @@
 
 #include <X11/Xlib.h>
 
-void make_atoms();
+void make_atoms(void);
 
 enum atom_sym {
         ATOM_WM_PROTOCOLS,

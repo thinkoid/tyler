@@ -37,6 +37,6 @@ XftColor *xftcolor(enum color_type type);
 /* clang-format on */
 
 void make_colors(const char **pp, size_t n);
-void free_colors();
+void free_colors(void);
 
 #endif /* WM_COLOR_H */

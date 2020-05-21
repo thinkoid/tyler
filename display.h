@@ -10,10 +10,10 @@
 
 void make_display(const char *s);
 
-void free_display();
-void release_display();
+void free_display(void);
+void release_display(void);
 
-Display *display();
+Display *display(void);
 
 #define DPY (display())
 
@@ -23,7 +23,7 @@ Display *display();
 #define VISUAL (DefaultVisual(DPY, SCRN))
 #define COLORMAP (DefaultColormap(DPY, SCRN))
 
-int display_width();
-int display_height();
+int display_width(void);
+int display_height(void);
 
 #endif /* WM_DISPLAY_H */

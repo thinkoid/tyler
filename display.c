@@ -19,7 +19,7 @@ void make_display(const char *s)
         }
 }
 
-void free_display()
+void free_display(void)
 {
         if (g_display) {
                 XCloseDisplay(g_display);
@@ -27,7 +27,7 @@ void free_display()
         }
 }
 
-void release_display()
+void release_display(void)
 {
         if (g_display) {
                 close(ConnectionNumber(g_display));
@@ -35,17 +35,17 @@ void release_display()
         }
 }
 
-Display *display()
+Display *display(void)
 {
         return g_display;
 }
 
-int display_width()
+int display_width(void)
 {
         return DisplayWidth(DPY, SCRN);
 }
 
-int display_height()
+int display_height(void)
 {
         return DisplayHeight(DPY, SCRN);
 }

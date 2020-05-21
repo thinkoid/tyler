@@ -27,57 +27,57 @@ static const char *g_termcmd[] = {
 static int g_snap = 5;
 /* clang-format on */
 
-const char *config_fontname()
+const char *config_fontname(void)
 {
         return g_fontname;
 }
 
-const char **config_colors()
+const char **config_colors(void)
 {
         return g_colors;
 }
 
-size_t config_colors_size()
+size_t config_colors_size(void)
 {
         return SIZEOF(g_colors);
 }
 
-const int *config_cursors()
+const int *config_cursors(void)
 {
         return g_cursors;
 }
 
-size_t config_cursors_size()
+size_t config_cursors_size(void)
 {
         return SIZEOF(g_cursors);
 }
 
-const char **config_termcmd()
+const char **config_termcmd(void)
 {
         return g_termcmd;
 }
 
-int config_showbar()
+int config_showbar(void)
 {
         return g_showbar;
 }
 
-int config_border_width()
+int config_border_width(void)
 {
         return g_border_width;
 }
 
-int config_master_size()
+int config_master_size(void)
 {
         return g_master_size;
 }
 
-float config_master_ratio()
+float config_master_ratio(void)
 {
         return g_master_ratio;
 }
 
-int config_snap()
+int config_snap(void)
 {
         return g_snap;
 }

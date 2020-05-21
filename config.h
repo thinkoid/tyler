@@ -8,22 +8,22 @@
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 
-const char *config_fontname();
+const char *config_fontname(void);
 
-const char **config_colors();
-size_t config_colors_size();
+const char **config_colors(void);
+size_t config_colors_size(void);
 
-const int *config_cursors();
-size_t config_cursors_size();
+const int *config_cursors(void);
+size_t config_cursors_size(void);
 
-const char **config_termcmd();
+const char **config_termcmd(void);
 
-int config_showbar();
-int config_border_width();
+int config_showbar(void);
+int config_border_width(void);
 
-int config_master_size();
-float config_master_ratio();
+int config_master_size(void);
+float config_master_ratio(void);
 
-int config_snap();
+int config_snap(void);
 
 #endif /* WM_CONFIG_H */

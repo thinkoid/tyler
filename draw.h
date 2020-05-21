@@ -10,19 +10,23 @@
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
 
-typedef struct draw_surface draw_surface_t;
+struct draw_surface;
 
-draw_surface_t *make_draw_surface(int width, int height);
-draw_surface_t *draw_surface();
+struct draw_surface *make_draw_surface(int width, int height);
+struct draw_surface *draw_surface(void);
 
-void free_draw_surface(draw_surface_t *surf);
+void free_draw_surface(struct draw_surface *surf);
 
-void fill(draw_surface_t * surf, const rect_t *r, XftColor *bg);
+void fill(struct draw_surface * surf,
+          const struct rect *r, XftColor *bg);
 
-void draw_text(draw_surface_t *surf, const char *s, int x, XftColor *fg);
-void draw_rect(draw_surface_t *surf, const rect_t *r, XftColor *fg, int fill);
+void draw_text(struct draw_surface *surf,
+               const char *s, int x, XftColor *fg);
 
-void copy(draw_surface_t *surf,
+void draw_rect(struct draw_surface *surf,
+               const struct rect *r, XftColor *fg, int fill);
+
+void copy(struct draw_surface *surf,
           Drawable drw, int x, int y, int w, int h,
           int xto, int yto);
 

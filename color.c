@@ -21,7 +21,7 @@ void make_colors(const char **pp, size_t n)
         }
 }
 
-void free_colors()
+void free_colors(void)
 {
         size_t i;
         XftColor *p = g_colors;
