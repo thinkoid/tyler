@@ -33,22 +33,16 @@ void make_atoms()
 
         for (i = 0; i < SIZEOF(g_atoms); ++i)
                 g_atoms[i] = XInternAtom(DPY, names[i], 0);
+
+        XChangeProperty(DPY, ROOT, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace,
+                        (unsigned char *)(g_atoms + ATOM_NET_SUPPORTED),
+                        SIZEOF(g_atoms) - ATOM_NET_SUPPORTED);
 }
 
 Atom atom(enum atom_sym sym)
 {
         ASSERT(0 <= sym && sym <= SIZEOF(g_atoms));
         return g_atoms[sym];
-}
-
-Atom *netatoms()
-{
-        return g_atoms + ATOM_NET_SUPPORTED;
-}
-
-size_t netatoms_size()
-{
-        return SIZEOF(g_atoms) - ATOM_NET_SUPPORTED;
 }
 
 Atom atomic_property(Window win, Atom prop)

@@ -7,6 +7,8 @@
 
 #include <X11/Xlib.h>
 
+void make_atoms();
+
 enum atom_sym {
         ATOM_WM_PROTOCOLS,
         ATOM_WM_DELETE_WINDOW,
@@ -20,12 +22,7 @@ enum atom_sym {
         ATOM_NET_WM_STATE_FULLSCREEN
 };
 
-void make_atoms();
-
 Atom atom(enum atom_sym sym);
-
-Atom *netatoms();
-size_t netatoms_size();
 
 /* clang-format off */
 #define WM_PROTOCOLS            (atom(ATOM_WM_PROTOCOLS))

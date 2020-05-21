@@ -2367,15 +2367,6 @@ static void grab_buttons(Window win, int focus)
 
 /**********************************************************************/
 
-static void setup_root_supported_atoms()
-{
-        Atom *p = netatoms();
-        size_t n = netatoms_size();
-
-        XChangeProperty(DPY, ROOT, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace,
-                        (unsigned char *)p, n);
-}
-
 static void setup_root_masks_and_cursor()
 {
         XSetWindowAttributes x = { 0 };
@@ -2389,8 +2380,6 @@ static void setup_root_masks_and_cursor()
 static void setup_root()
 {
         setup_root_masks_and_cursor();
-        setup_root_supported_atoms();
-
         grab_keys(ROOT);
 }
 
