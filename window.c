@@ -27,74 +27,24 @@ int has_fullscreen_property(Window win)
 
 /**********************************************************************/
 
-long wm_state(Window win)
-{
-        Atom real;
-        int format;
-
-        unsigned char *prop = 0;
-        unsigned long nitems, remaining;
-
-        long result = -1L;
-
-        if (XGetWindowProperty(DPY, win, WM_STATE, 0L, 2L, 0, WM_STATE, &real,
-                               &format, &nitems, &remaining,
-                               (unsigned char **)&prop)) {
-                if (nitems)
-                        result = *prop;
-
-                XFree(prop);
-        }
-
-        return result;
-}
-
-void set_wm_state(Window win, long state)
-{
-        long arr[] = { 0, None };
-
-        arr[0] = state;
-        XChangeProperty(DPY, win, WM_STATE, WM_STATE, 32, PropModeReplace,
-                        (unsigned char *)arr, 2);
-}
-
-int is_iconic(Window win)
-{
-        return IconicState == wm_state(win);
-}
-
-int is_viewable(Window win)
-{
-        XWindowAttributes attr;
-        return XGetWindowAttributes(DPY, win, &attr) &&
-               IsViewable == attr.map_state;
-}
-
-Window focused_window(void)
-{
-        Atom unused_type;
-        int unused_format;
-
-        unsigned long nitems, unused_bytes_after;
-        unsigned char *prop;
-
-        int status =
-                XGetWindowProperty(DPY, ROOT, NET_ACTIVE_WINDOW, 0, (~0L), 0,
-                                   AnyPropertyType, &unused_type, &unused_format,
-                                   &nitems, &unused_bytes_after, &prop);
-
-        return Success == status && 0 < nitems ? *(Window *)prop : 0;
-}
-
-int has_focus(Window win)
-{
-        Window focused = focused_window();
-        return focused && focused == win;
-}
-
 void send_focus(Window win)
 {
         send(win, WM_TAKE_FOCUS);
+}
+
+int has_protocol(Window win, Atom proto)
+{
+        int i, n, ret = 0;
+        Atom *ptr = 0;
+
+        if (XGetWMProtocols(DPY, win, &ptr, &n)) {
+                for (i = 0; i < n && proto != ptr[i]; ++i)
+                        ;
+                ret = i < n;
+                XFree(ptr);
+        }
+
+        return ret;
 }
 
 void reset_focus_property(void)
@@ -138,27 +88,6 @@ void set_urgent(Window win)
 
                 XFree(p);
         }
-}
-
-int has_protocol(Window win, Atom proto)
-{
-        int i, n, ret = 0;
-        Atom *ptr = 0;
-
-        if (XGetWMProtocols(DPY, win, &ptr, &n)) {
-                for (i = 0; i < n && proto != ptr[i]; ++i)
-                        ;
-                ret = i < n;
-                XFree(ptr);
-        }
-
-        return ret;
-}
-
-int has_override_redirect(Window win)
-{
-        XWindowAttributes attr;
-        return XGetWindowAttributes(DPY, win, &attr) && attr.override_redirect;
 }
 
 void reset_fullscreen_property(Window win)
@@ -238,13 +167,19 @@ void zap_window(Window win)
         XUngrabServer(DPY);
 }
 
-Window *all_windows(void)
+Window *all_windows(Window *pbuf, size_t *plen)
 {
-        Window root, parent, *pbuf = 0;
-        unsigned len;
+        Window root, parent, *p = 0;
+        unsigned n = 0;
 
-        if (!XQueryTree(DPY, ROOT, &root, &parent, &pbuf, &len))
-                pbuf = 0;
+        if (!XQueryTree(DPY, ROOT, &root, &parent, &p, &n))
+                return 0;
+
+        if (n > *plen)
+                pbuf = malloc((*plen = n) * sizeof *p);
+
+        memcpy(pbuf, p, n * sizeof *p);
+        XFree(p);
 
         return pbuf;
 }
