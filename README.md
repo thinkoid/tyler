@@ -17,6 +17,12 @@ Like monsterwm, tyler does not provide a bar. Instead it dumps its status to
 stdout to be consumed by an external script with a user's choice of status
 bar. Monsterwm project has a good deal of examples of such scripts.
 
+v0.6
+----
+
+Improved stability. Fixed bugs in drawing and updating of status. Added client
+list property management to help X tools in talking to clients.
+
 v0.5
 ----
 
