@@ -1861,9 +1861,14 @@ static int resize_client(void)
 
 static int do_tag(void)
 {
+        struct client *cur = current_screen->current;
+
+        if (0 == cur || !is_visible(cur))
+                current_screen->current = stack_top(current_screen);
+
         remap_quiet();
 
-        focus(stack_top(current_screen));
+        focus(current_screen->current);
         drawbar(current_screen);
 
         return 0;
