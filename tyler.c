@@ -44,9 +44,6 @@
 #define  WIDTH(c) (GEOM(c)->r.w + 2 * GEOM(c)->bw)
 #define HEIGHT(c) (GEOM(c)->r.h + 2 * GEOM(c)->bw)
 
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
-
 #define ROOTMASK (0                             \
         | SubstructureRedirectMask              \
         | SubstructureNotifyMask                \
@@ -60,13 +57,6 @@
         | FocusChangeMask                       \
         | PropertyChangeMask)
 /* clang-format on */
-
-/**********************************************************************/
-
-static int clampi(int x, int lower, int upper)
-{
-    return MIN(upper, MAX(x, lower));
-}
 
 /**********************************************************************/
 
