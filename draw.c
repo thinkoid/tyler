@@ -97,8 +97,7 @@ void draw_text(struct draw_surface *surf, const char *s, int x, XftColor *fg)
 
         y = g.y + (g.h / 2) - (h / 2) + a;
 
-        XftDrawStringUtf8(surf->xft, fg, FNT, x, y,
-                          (XftChar8*)s, strlen(s));
+        XftDrawStringUtf8(surf->xft, fg, FNT, x, y, (XftChar8*)s, strlen(s));
 }
 
 void draw_rect(struct draw_surface *surf,
