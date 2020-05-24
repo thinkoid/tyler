@@ -141,7 +141,7 @@ static struct state *state_of(struct client *c)
 }
 
 #define IS_TRAIT_DEF(x)                                 \
-        static int WM_CAT(is_, x)(struct client *c) {        \
+        static int WM_CAT(is_, x)(struct client *c) {   \
                 return state_of(c)->x;                  \
         }
 
