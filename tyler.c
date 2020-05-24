@@ -312,10 +312,12 @@ static int drawtag(struct screen *s, const char *tag,
         fill(DRW, &r, bg);
 
         if (selected) {
-                struct rect q = { 0, 0, 5, 5 };
+                struct rect q = { 0 };
 
-                q.x = r.x + 3;
-                q.y = r.y + 3;
+                q.x = r.x + 2;
+                q.y = r.y + 2;
+
+                q.w = q.h = h/4;
 
                 draw_rect(DRW, &q, fg, filled);
         }
@@ -2434,9 +2436,9 @@ static void init_screens(void)
 
 static void init(void)
 {
-	setup_sigchld();
+        setup_sigchld();
 
-	init_display();
+        init_display();
         init_atoms();
         init_colors();
         init_cursors();
