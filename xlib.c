@@ -1,7 +1,8 @@
 /* -*- mode: c; -*- */
 
-#include <xlib.h>
 #include <display.h>
+#include <malloc-wrapper.h>
+#include <xlib.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +53,7 @@ XSizeHints *get_size_hints(Window win, XSizeHints *hints)
         XSizeHints *p = hints;
 
         if (0 == p)
-                p = malloc(sizeof *p);
+                p = malloc_(sizeof *p);
 
         memset(p, 0, sizeof *p);
 

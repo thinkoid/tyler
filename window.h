@@ -40,7 +40,6 @@ Window *all_windows(Window *pbuf, size_t *plen);
 void pause_propagate(Window win, long mask);
 void resume_propagate(Window win, long mask);
 
-struct rect *geometry_of(Window win, struct rect *r);
 char *text_property(Window win, Atom atom, char *buf, size_t len);
 
 #endif /* WM_WINDOW_H */

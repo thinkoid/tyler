@@ -2,6 +2,7 @@
 
 #include <atom.h>
 #include <display.h>
+#include <malloc-wrapper.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -73,7 +74,7 @@ const char *atom_name(Atom prop, char *buf, size_t len)
 
         n = strlen(s);
         if (n > len - 1) {
-                pbuf = malloc(n + 1);
+                pbuf = malloc_(n + 1);
         }
 
         strcpy(pbuf, s);

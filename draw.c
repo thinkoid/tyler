@@ -2,33 +2,56 @@
 
 #include <draw.h>
 #include <font.h>
+#include <malloc-wrapper.h>
 #include <window.h>
 
 struct draw_surface {
         Drawable drw;
-        GC gc;
-        XftDraw *xftdrw;
+        XftDraw *xft;
 };
 
-struct draw_surface *make_draw_surface(int width, int height)
+static struct rect *geometry_of(Drawable drw, struct rect *r)
 {
-        struct draw_surface *p = malloc(sizeof *p);
+        struct rect *pr = r;
+
+        int x, y;
+        unsigned w, h, bw, depth;
+
+        Window ignore;
+
+        if (0 == pr)
+                pr = malloc_(sizeof *r);
+
+        if (XGetGeometry(DPY, drw, &ignore, &x, &y, &w, &h, &bw, &depth)) {
+                pr->x = x;
+                pr->y = y;
+                pr->w = w;
+                pr->h = h;
+        } else {
+                if (pr != r) {
+                        free(pr);
+                        pr = 0;
+                }
+        }
+
+        return pr;
+}
+
+struct draw_surface *make_draw_surface(int w, int h)
+{
+        struct draw_surface *p = malloc_(sizeof *p);
         memset(p, 0, sizeof *p);
 
-        p->drw = XCreatePixmap(
-                DPY, ROOT, width, height, DefaultDepth(DPY, SCRN));
+        p->drw = XCreatePixmap(DPY, ROOT, w, h, DefaultDepth(DPY, SCRN));
 
         if (0 == p->drw) {
-                fprintf(stderr, "XCreatePixmap(%d, %d) failed", width, height);
+                fprintf(stderr, "XCreatePixmap(%d, %d) failed", w, h);
                 goto bottom;
         }
 
-        p->gc = XCreateGC(DPY, ROOT, 0, 0);
-        XSetLineAttributes(DPY, p->gc, 1, LineSolid, CapButt, JoinMiter);
+        p->xft = XftDrawCreate(DPY, p->drw, VISUAL, COLORMAP);
 
-        p->xftdrw = XftDrawCreate(DPY, p->drw, VISUAL, COLORMAP);
-
-        if (0 == p->xftdrw) {
+        if (0 == p->xft) {
                 fprintf(stderr, "XftDrawCreate failed");
                 goto top;
         }
@@ -36,7 +59,6 @@ struct draw_surface *make_draw_surface(int width, int height)
         return p;
 
 top:
-        XFreeGC(DPY, p->gc);
         XFreePixmap(DPY, p->drw);
 
 bottom:
@@ -47,17 +69,15 @@ bottom:
 
 void free_draw_surface(struct draw_surface *surf)
 {
-        XftDrawDestroy(surf->xftdrw);
-        XFreeGC(DPY, surf->gc);
+        XftDrawDestroy(surf->xft);
         XFreePixmap(DPY, surf->drw);
-
         free(surf);
 }
 
 void fill(struct draw_surface *surf, const struct rect *r, XftColor *bg)
 {
-        XSetForeground(DPY, surf->gc, bg->pixel);
-        XFillRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
+        XSetForeground(DPY, GC_, bg->pixel);
+        XFillRectangle(DPY, surf->drw, GC_, r->x, r->y, r->w, r->h);
 }
 
 void draw_text(struct draw_surface *surf, const char *s, int x, XftColor *fg)
@@ -77,27 +97,29 @@ void draw_text(struct draw_surface *surf, const char *s, int x, XftColor *fg)
 
         y = g.y + (g.h / 2) - (h / 2) + a;
 
-        XftDrawStringUtf8(surf->xftdrw, fg, FNT, x, y,
+        XftDrawStringUtf8(surf->xft, fg, FNT, x, y,
                           (XftChar8*)s, strlen(s));
 }
 
-void draw_rect(struct draw_surface *surf, const struct rect *r, XftColor *fg, int fill) {
+void draw_rect(struct draw_surface *surf,
+               const struct rect *r, XftColor *fg, int fill)
+{
         struct rect g = { 0 };
         geometry_of(surf->drw, &g);
 
-        XSetForeground(DPY, surf->gc, fg->pixel);
+        XSetForeground(DPY, GC_, fg->pixel);
 
         if (fill)
-                XFillRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
+                XFillRectangle(DPY, surf->drw, GC_, r->x, r->y, r->w, r->h);
         else
-                XDrawRectangle(DPY, surf->drw, surf->gc, r->x, r->y, r->w, r->h);
+                XDrawRectangle(DPY, surf->drw, GC_, r->x, r->y, r->w, r->h);
 }
 
 void copy(struct draw_surface *surf,
           Drawable drw, int x, int y, int w, int h,
           int xto, int yto)
 {
-        XCopyArea(DPY, surf->drw, drw, surf->gc, x, y, w, h, xto, yto);
+        XCopyArea(DPY, surf->drw, drw, GC_, x, y, w, h, xto, yto);
         XSync(DPY, 0);
 }
 

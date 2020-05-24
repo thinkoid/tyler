@@ -9,6 +9,7 @@
 #include <draw.h>
 #include <error.h>
 #include <font.h>
+#include <malloc-wrapper.h>
 #include <window.h>
 #include <xlib.h>
 
@@ -486,7 +487,7 @@ static void tile(struct screen *s)
                         ++n;
 
         if (n > SIZEOF(rs)) {
-                prs = malloc(n * sizeof *prs);
+                prs = malloc_(n * sizeof *prs);
         }
 
         get_tiles_geometries(s, prs, n);
@@ -546,7 +547,7 @@ static struct rect *get_xinerama_screen_geometries(struct rect *rs, size_t *len)
 
         if ((xis = XineramaQueryScreens(DPY, &n))) {
                 if ((size_t)n > SIZEOF(pxis)) {
-                        ppxis = malloc(n * sizeof *ppxis);
+                        ppxis = malloc_(n * sizeof *ppxis);
                 }
 
                 for (i = 0; i < n; ++i)
@@ -569,7 +570,7 @@ static struct rect *get_xinerama_screen_geometries(struct rect *rs, size_t *len)
                 qsort(ppxis, n, sizeof *ppxis, by_screen_number);
 
                 if ((size_t)n > *len) {
-                        prs = malloc(n * sizeof *prs);
+                        prs = malloc_(n * sizeof *prs);
                 }
 
                 *len = n;
@@ -639,7 +640,7 @@ static Window make_bar(int x, int y, int w, int h)
 
 static struct screen *make_screen(const struct rect *r)
 {
-        struct screen *s = malloc(sizeof *s);
+        struct screen *s = malloc_(sizeof *s);
         memset(s, 0, sizeof *s);
 
         s->r.x = r->x;
@@ -815,7 +816,7 @@ static struct client *make_client(Window win, XWindowAttributes *attr)
         struct state *state;
         struct geom *geom;
 
-        struct client *c = malloc(sizeof(struct client));
+        struct client *c = malloc_(sizeof(struct client));
         memset(c, 0, sizeof *c);
 
         c->win = win;
@@ -1037,7 +1038,7 @@ static void stack(struct screen *s)
                 return;
 
         if (n > SIZEOF(ws)) {
-                pws = malloc(n * sizeof *pws);
+                pws = malloc_(n * sizeof *pws);
         }
 
         pws[0] = s->bar;
@@ -1166,7 +1167,7 @@ static void update_client_list(void)
                         if (i >= n) {
                                 long *p = pbuf;
 
-                                pbuf = malloc(2 * n * sizeof *pbuf);
+                                pbuf = malloc_(2 * n * sizeof *pbuf);
                                 memcpy(pbuf, p, n * sizeof *pbuf);
 
                                 n *= 2;

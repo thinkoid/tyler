@@ -16,6 +16,7 @@ void release_display(void);
 Display *display(void);
 
 #define DPY (display())
+#define GC_ (gc())
 
 #define SCRN (DefaultScreen(DPY))
 #define ROOT (RootWindow(DPY, SCRN))
@@ -25,5 +26,7 @@ Display *display(void);
 
 int display_width(void);
 int display_height(void);
+
+GC gc(void);
 
 #endif /* WM_DISPLAY_H */

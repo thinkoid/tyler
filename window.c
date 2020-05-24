@@ -4,6 +4,7 @@
 #include <color.h>
 #include <config.h>
 #include <error.h>
+#include <malloc-wrapper.h>
 #include <window.h>
 #include <xlib.h>
 
@@ -176,7 +177,7 @@ Window *all_windows(Window *pbuf, size_t *plen)
                 return 0;
 
         if (n > *plen)
-                pbuf = malloc((*plen = n) * sizeof *p);
+                pbuf = malloc_((*plen = n) * sizeof *p);
 
         memcpy(pbuf, p, n * sizeof *p);
         XFree(p);
@@ -198,23 +199,6 @@ void resume_propagate(Window win, long mask)
         XChangeWindowAttributes(DPY, win, CWEventMask, &attr);
 }
 
-struct rect *geometry_of(Window win, struct rect *r)
-{
-        int x, y;
-        unsigned w, h, bw, depth;
-
-        Window ignore;
-
-        if (0 == r)
-                r = malloc(sizeof *r);
-
-        if (XGetGeometry(DPY, win, &ignore, &x, &y, &w, &h, &bw, &depth)) {
-                r->x = x; r->y = y; r->w = w; r->h = h;
-        }
-
-        return r;
-}
-
 static char *copy_text_property(const char *src, char *buf, size_t len)
 {
         char *pbuf = buf;
@@ -223,7 +207,7 @@ static char *copy_text_property(const char *src, char *buf, size_t len)
                 size_t n = strlen(src);
 
                 if (0 == pbuf || len < n + 1)
-                        pbuf = malloc(n + 1);
+                        pbuf = malloc_(n + 1);
 
                 strcpy(pbuf, src);
         }
