@@ -15,6 +15,7 @@ enum color_type {
         COLOR_SELECT_BORDER,
         COLOR_SELECT_BACKGROUND,
         COLOR_SELECT_FOREGROUND,
+        SIZEOF_COLORS
 };
 
 unsigned long color(enum color_type type);

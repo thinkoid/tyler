@@ -9,7 +9,12 @@
 
 typedef Cursor cursor_t;
 
-enum cursor_type { CURSOR_NORMAL, CURSOR_RESIZE, CURSOR_MOVE };
+enum cursor_type {
+        CURSOR_NORMAL,
+        CURSOR_RESIZE,
+        CURSOR_MOVE,
+        SIZEOF_CURSORS
+};
 
 cursor_t cursor(enum cursor_type type);
 

@@ -9,7 +9,7 @@
 
 #include <X11/Xatom.h>
 
-static Atom g_atoms[10];
+static Atom g_atoms[SIZEOF_ATOMS];
 
 void make_atoms(void)
 {
@@ -28,21 +28,20 @@ void make_atoms(void)
                 /* clang-format on */
         };
 
-        size_t i;
+        int i;
+        ASSERT(SIZEOF_ATOMS == SIZEOF(names));
 
-        ASSERT(SIZEOF(g_atoms) == SIZEOF(names));
-
-        for (i = 0; i < SIZEOF(g_atoms); ++i)
+        for (i = 0; i < SIZEOF_ATOMS; ++i)
                 g_atoms[i] = XInternAtom(DPY, names[i], 0);
 
         XChangeProperty(DPY, ROOT, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace,
                         (unsigned char *)(g_atoms + ATOM_NET_SUPPORTED),
-                        SIZEOF(g_atoms) - ATOM_NET_SUPPORTED);
+                        SIZEOF_ATOMS - ATOM_NET_SUPPORTED);
 }
 
 Atom atom(enum atom_sym sym)
 {
-        ASSERT(0 <= sym && sym <= SIZEOF(g_atoms));
+        ASSERT(0 <= sym && sym <= SIZEOF_ATOMS);
         return g_atoms[sym];
 }
 

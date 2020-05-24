@@ -19,7 +19,8 @@ enum atom_sym {
         ATOM_NET_CLIENT_LIST,
         ATOM_NET_WM_STATE,
         ATOM_NET_WM_NAME,
-        ATOM_NET_WM_STATE_FULLSCREEN
+        ATOM_NET_WM_STATE_FULLSCREEN,
+        SIZEOF_ATOMS
 };
 
 Atom atom(enum atom_sym sym);

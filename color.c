@@ -3,17 +3,17 @@
 #include <color.h>
 #include <display.h>
 
-static XftColor g_colors[6];
+static XftColor g_colors[SIZEOF_COLORS];
 
 void make_colors(const char **pp, size_t n)
 {
-        size_t i;
+        int i;
         XftColor *p = g_colors;
 
         ASSERT(pp);
-        ASSERT(n == SIZEOF(g_colors));
+        ASSERT(n == SIZEOF_COLORS);
 
-        for (i = 0; i < SIZEOF(g_colors); ++i) {
+        for (i = 0; i < SIZEOF_COLORS; ++i) {
                 if (!XftColorAllocName(DPY, VISUAL, COLORMAP, pp[i], p + i)) {
                         fprintf(stderr, "color %s allocation failed", pp[i]);
                         exit(1);
@@ -23,22 +23,22 @@ void make_colors(const char **pp, size_t n)
 
 void free_colors(void)
 {
-        size_t i;
+        int i;
         XftColor *p = g_colors;
 
-        for (i = 0; i < SIZEOF(g_colors); ++i) {
+        for (i = 0; i < SIZEOF_COLORS; ++i) {
                 XftColorFree(DPY, VISUAL, COLORMAP, p + i);
         }
 }
 
 unsigned long color(enum color_type type)
 {
-        ASSERT(0 <= type && type < SIZEOF(g_colors));
+        ASSERT(0 <= type && type < SIZEOF_COLORS);
         return g_colors[type].pixel;
 }
 
 XftColor *xftcolor(enum color_type type)
 {
-        ASSERT(0 <= type && type < SIZEOF(g_colors));
+        ASSERT(0 <= type && type < SIZEOF_COLORS);
         return g_colors + type;
 }
