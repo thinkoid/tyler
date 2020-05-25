@@ -1,21 +1,27 @@
 Tyler
 =====
 
-Tyler is derivative work.
+Tyler is derivative work and all thanks go to suckless!
 
-Its direct parent is dwm which I used as a template, debugging reference, and
-learning tutorial. I stripped out all that I did not find essential to my
-workflow in dwm. Although all code has been re-written (c89) it is still
-conceptually identical to dwm.
+Its direct parent  is dwm which I  used as a template,  debugging reference, and
+learning tutorial.  Dwm has inspired  a lot of  emulation around the  subject of
+tiling  window  managers  by  the   virtue  of  its  small,  simple,  accessible
+codebase. I, personally, have learned a lot about Xlib by studying the dwm code.
 
-One important difference from dwm is the hiding mechanism for windows that do
-not match the current screen tag. While dwm moves them outside screen
-boundaries, tyler unmaps them. The same mechanism is used in monsterwm
-although that WM does not use tags.
+Partly, this rewrite lead to minor operational changes. E.g., windows are hidden
+by un-mapping  them and  not by  moving them  outside the  viewable area  of the
+screen, like in dwm.  This in turn changes the way the  events are consumed, and
+so on.
 
-Like monsterwm, tyler does not provide a bar. Instead it dumps its status to
-stdout to be consumed by an external script with a user's choice of status
-bar. Monsterwm project has a good deal of examples of such scripts.
+Initially, tyler did not have a status bar. However, that sucks when it comes to
+marshal data  between the  WM and its  status bar. So,  it re-acquired  a status
+bar. Just  like dwm, structured  in three fields.  It's hard to  improve optimal
+designs.
+
+v0.7
+----
+
+Stable enough, trimmed and readable. Used daily on all my desktops.
 
 v0.6
 ----
