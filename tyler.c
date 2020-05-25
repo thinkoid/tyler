@@ -538,32 +538,24 @@ static struct rect *get_xinerama_screen_geometries(struct rect *rs, size_t *len)
         xi_t *xis, *pxis[64], **ppxis = pxis, **p = ppxis;
 
         if ((xis = XineramaQueryScreens(DPY, &n))) {
-                if ((size_t)n > SIZEOF(pxis)) {
+                if ((size_t)n > SIZEOF(pxis))
                         ppxis = malloc_(n * sizeof *ppxis);
-                }
 
                 for (i = 0; i < n; ++i)
                         ppxis[i] = xis + i;
 
-                /*
-                 * Sort the geometries by x, then y if x is same:
-                 */
+                /* Sort the geometries by x, then y if x is same: */
                 qsort(ppxis, n, sizeof *ppxis, by_x_then_y);
 
-                /*
-                 * Eliminate duplicate geometries:
-                 */
+                /* Eliminate duplicate geometries: */
                 unique_xinerama_geometries(&p, ppxis + n);
                 n = p - ppxis;
 
-                /*
-                 * Sort back by the screen number:
-                 */
+                /* Sort back by the screen number: */
                 qsort(ppxis, n, sizeof *ppxis, by_screen_number);
 
-                if ((size_t)n > *len) {
+                if ((size_t)n > *len)
                         prs = malloc_(n * sizeof *prs);
-                }
 
                 *len = n;
 
@@ -1417,19 +1409,6 @@ static void ungrab_pointer(void)
         XUngrabPointer(DPY, CurrentTime);
 }
 
-static void snap(struct rect *r, int *x, int *y, int w, int h, int snap)
-{
-        if (abs(r->x - *x) < snap)
-                *x = r->x;
-        else if (abs((r->x + r->w) - (*x + w)) < snap)
-                *x = r->x + r->w - w;
-
-        if (abs(r->y - *y) < snap)
-                *y = r->y;
-        else if (abs((r->y + r->h) - (*y + h)) < snap)
-                *y = r->y + r->h - h;
-}
-
 /**********************************************************************/
 
 static int zoom(void)
@@ -1547,26 +1526,6 @@ static int move_focus_right(void)
                 focus(c);
         }
 
-        return 0;
-}
-
-static int increment_master(void)
-{
-        return 0;
-}
-
-static int decrement_master(void)
-{
-        return 0;
-}
-
-static int shrink_master(void)
-{
-        return 0;
-}
-
-static int grow_master(void)
-{
         return 0;
 }
 
@@ -1948,10 +1907,6 @@ static struct keycmd g_keycmds[] = {
         { MODKEY,               XK_b,       toggle_bar         },
         { MODKEY | ShiftMask,   XK_Left,    move_focus_left    },
         { MODKEY | ShiftMask,   XK_Right,   move_focus_right   },
-        { MODKEY,               XK_i,       increment_master   },
-        { MODKEY,               XK_d,       decrement_master   },
-        { MODKEY,               XK_h,       shrink_master      },
-        { MODKEY,               XK_l,       grow_master        },
         { MODKEY | ShiftMask,   XK_c,       zap                },
         { MODKEY,               XK_comma,   focus_prev_screen  },
         { MODKEY,               XK_period,  focus_next_screen  },
@@ -2316,7 +2271,7 @@ static void grab_keys(Window win)
 
 /* clang-format off */
 #define GRABKEYS(x)                                             \
-        XGrabKey(DPY, keycode, g_keycmds[i].mod | x, win, 1,    \
+        XGrabKey(DPY, keycode, g_keycmds[i].mod | (x), win, 1,  \
                  GrabModeAsync, GrabModeAsync)
         /* clang-format on */
 
@@ -2355,7 +2310,7 @@ static void grab_buttons(Window win, int focus)
 #define GRABBUTTONS(x)                                  \
         XGrabButton(DPY,                                \
                     g_ptrcmds[i].button,                \
-                    g_ptrcmds[i].mod | x,               \
+                    g_ptrcmds[i].mod | (x),             \
                     win, 0, BUTTONMASK,                 \
                     GrabModeAsync, GrabModeAsync,       \
                     None, None)
@@ -2389,55 +2344,29 @@ static void setup_root(void)
 
 /**********************************************************************/
 
-static void init_display(void)
-{
-        make_display(0);
-        ASSERT(DPY);
-        atexit(free_display);
-}
-
-static void init_atoms(void)
-{
-        make_atoms();
-}
-
-static void init_colors(void)
-{
-        make_colors(config_colors(), config_colors_size());
-        atexit(free_colors);
-}
-
-static void init_cursors(void)
-{
-        make_cursors(config_cursors(), config_cursors_size());
-        atexit(free_cursors);
-}
-
-static void init_font(void)
-{
-        make_font(config_fontname());
-}
-
-static void init_screens(void)
-{
-        make_screens();
-        atexit(free_screens);
-}
-
 static void init(void)
 {
         setup_sigchld();
 
-        init_display();
-        init_atoms();
-        init_colors();
-        init_cursors();
-        init_font();
+        make_display(0);
+        atexit(free_display);
+
+        make_atoms();
+
+        make_colors(config_colors(), config_colors_size());
+        atexit(free_colors);
+
+        make_cursors(config_cursors(), config_cursors_size());
+        atexit(free_cursors);
+
+        make_font(config_fontname());
+        atexit(free_font);
 
         init_error_handling();
         setup_root();
 
-        init_screens();
+        make_screens();
+        atexit(free_screens);
 }
 
 static void run(void)
