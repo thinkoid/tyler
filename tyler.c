@@ -426,11 +426,12 @@ static void drawtitle(struct screen *s, int left, int right)
                 strcpy((pbuf = buf), "(null)");
 
         n = strlen(pbuf);
-        for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0)
-                ;
+        for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0) ;
 
-        if (n)
-                draw_text(DRW, pbuf, left, XFT_NORMAL_FG);
+        draw_text(DRW, pbuf, left, XFT_NORMAL_FG);
+
+        if (pbuf != buf)
+                free(pbuf);
 }
 
 static void drawbar(struct screen *s)
