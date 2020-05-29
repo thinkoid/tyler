@@ -201,12 +201,12 @@ void resume_propagate(Window win, long mask)
 
 static char *copy_text_property(const char *src, char *buf, size_t len)
 {
-        char *pbuf = buf;
+        char *pbuf = 0;
 
         if (src && src[0]) {
                 size_t n = strlen(src);
 
-                if (0 == pbuf || len < n + 1)
+                if (0 == (pbuf = buf) || len < n + 1)
                         pbuf = malloc_(n + 1);
 
                 strcpy(pbuf, src);
@@ -219,12 +219,12 @@ char *text_property(Window win, Atom atom, char *buf, size_t len)
 {
         char *pbuf = 0;
 
-        XTextProperty prop;
-        XGetTextProperty(DPY, win, &prop, atom);
+        XTextProperty prop = { 0 };
 
-        if (prop.nitems) {
-                if (prop.encoding == XA_STRING)
+        if (XGetTextProperty(DPY, win, &prop, atom) && prop.nitems) {
+                if (prop.encoding == XA_STRING) {
                         pbuf = copy_text_property((char *)prop.value, buf, len);
+                }
                 else {
                         char** list = 0;
                         int n;
