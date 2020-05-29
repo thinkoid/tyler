@@ -391,11 +391,7 @@ static int drawstatus(struct screen *s, int left)
                 r.w -= left - r.x; r.x = left;
 
                 n = strlen(pbuf);
-                for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0)
-                        ;
-
-                if (0 == n)
-                        return left;
+                for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0) ;
         }
 
         fill(DRW, &r, XFT_NORMAL_BG);
