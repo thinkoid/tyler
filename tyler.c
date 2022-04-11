@@ -1266,11 +1266,9 @@ static int update_screen(struct screen *s, struct rect *r)
 
 static void remap_quiet(void)
 {
-        pause_propagate(ROOT, SubstructureNotifyMask);
-
         map_visible();
+        pause_propagate(ROOT, SubstructureNotifyMask);
         unmap_invisible();
-
         resume_propagate(ROOT, ROOTMASK);
 }
 
