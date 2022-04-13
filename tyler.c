@@ -226,34 +226,11 @@ static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
         }
 }
 
-static size_t count_visible_clients(struct screen *s)
-{
-        struct client *c;
-        size_t n;
-
-        for (n = 0, c = s->head; c; c = c->next)
-                if (is_visible(c))
-                        ++n;
-
-        return n;
-}
-
-static size_t count_visible_tiles(struct screen *s)
-{
-        struct client *c;
-        size_t n;
-
-        for (n = 0, c = s->head; c; c = c->next)
-                if (is_visible_tile(c)) ++n;
-
-        return n;
-}
-
 static void move_resize_client(struct client *c, struct rect *r)
 {
         struct geom *g = &state_of(c)->g;
 
-        if (r && r != &g->r)
+        if (r)
                 g->r = *r;
 
         XMoveResizeWindow(DPY, c->win,
@@ -436,7 +413,7 @@ static void drawtitle(struct screen *s, int left, int right)
 
 static void drawbar(struct screen *s)
 {
-        int left, right;
+        int left = 0, right = s->r.w;
 
         struct rect r;
 
@@ -448,7 +425,9 @@ static void drawbar(struct screen *s)
         fill(DRW, &r, XFT_NORMAL_BG);
 
         left  = drawtags(s);
-        right = drawstatus(s, left);
+
+        if (s == current_screen)
+                right = drawstatus(s, left);
 
         drawtitle(s, left, right);
 
@@ -462,22 +441,19 @@ static void drawbars(void)
                 ;
 }
 
-static void tile(struct screen *s)
+static void retile(struct screen *s)
 {
         struct rect rs[64], *prs = rs, *r;
 
         struct client *c;
         size_t n;
 
-        drawbar(s);
-
         for (n = 0, c = s->head; c; c = c->next)
                 if (is_visible_tile(c))
                         ++n;
 
-        if (n > SIZEOF(rs)) {
+        if (n > SIZEOF(rs))
                 prs = malloc_(n * sizeof *prs);
-        }
 
         get_tiles_geometries(s, prs, n);
         r = prs;
@@ -801,21 +777,17 @@ static struct client *make_client(Window win, XWindowAttributes *attr)
         memset(c, 0, sizeof *c);
 
         c->win = win;
-
         state = state_of(c);
+
         geom = &state->g;
 
-        geom->r.x = attr->x;
-        geom->r.y = attr->y;
-        geom->r.w = attr->width;
-        geom->r.h = attr->height;
-
+        geom->r = (struct rect){ attr->x, attr->y, attr->width, attr->height };
         geom->bw = config_border_width();
 
         /*
          * Set window border width, color, and send client geometry information:
          */
-        set_default_window_border(win);
+        unselect_window(win);
         send_configure_notify(c);
 
         /*
@@ -901,48 +873,63 @@ static void map_visible(void)
                         XMapWindow(DPY, c->win);
 }
 
+static void remap_quiet(void)
+{
+        pause_propagate(ROOT, SubstructureNotifyMask);
+        unmap_invisible();
+        resume_propagate(ROOT, ROOTMASK);
+
+        map_visible();
+}
+
+static void unmap_quiet(struct client *c)
+{
+        if (c) {
+                pause_propagate(ROOT, SubstructureNotifyMask);
+                XUnmapWindow(DPY, c->win);
+                resume_propagate(ROOT, ROOTMASK);
+        }
+}
+
 static void push_front(struct client *c)
 {
-        c->next = c->screen->head;
-        c->screen->head = c;
+        if (c) {
+                c->next = c->screen->head;
+                c->screen->head = c;
+        }
 }
 
 static void stack_push_front(struct client *c)
 {
-        if (0 == c)
-                return;
+        if (c) {
+                c->focus_next = c->screen->focus_head;
+                c->screen->focus_head = c;
 
-        c->focus_next = c->screen->focus_head;
-        c->screen->focus_head = c;
-
-        if (is_visible(c))
-                c->screen->current = c;
+                if (is_visible(c))
+                        c->screen->current = c;
+        }
 }
 
 static void push_back(struct client *c)
 {
         struct client **pptr;
 
-        if (0 == c)
-                return;
-
-        for (pptr = &c->screen->head; *pptr; pptr = &(*pptr)->next)
-                ;
-
-        *pptr = c;
+        if (c) {
+                for (pptr = &c->screen->head; *pptr; pptr = &(*pptr)->next)
+                        ;
+                *pptr = c;
+        }
 }
 
 static void stack_push_back(struct client *c)
 {
         struct client **pptr;
 
-        if (0 == c)
-                return;
-
-        for (pptr = &c->screen->focus_head; *pptr; pptr = &(*pptr)->focus_next)
-                ;
-
-        *pptr = c;
+        if (c) {
+                for (pptr = &c->screen->focus_head; *pptr; pptr = &(*pptr)->focus_next)
+                        ;
+                *pptr = c;
+        }
 }
 
 static void pop(struct client *c)
@@ -988,10 +975,10 @@ static void stack_pop(struct client *c)
         ASSERT(*pptr);
         *pptr = c->focus_next;
 
+        c->focus_next = 0;
+
         if (c == c->screen->current)
                 c->screen->current = stack_top(c->screen);
-
-        c->focus_next = 0;
 }
 
 static void stack(struct screen *s)
@@ -1048,7 +1035,7 @@ static void stack(struct screen *s)
                                 pws[i++] = c->win;
                         }
                 } else {
-                        pws[j++] = c->win;
+                        pws[k++] = c->win;
                 }
         }
 
@@ -1087,52 +1074,60 @@ static void set_client_focus(struct client *c)
 
 static void unfocus(struct client *c)
 {
-        if (0 == c)
-                return;
-
-        set_default_window_border(c->win);
-        grab_buttons(c->win, 0);
+        if (c) {
+                /* TODO: clients may not be visible */
+                grab_buttons(c->win, 0);
+                set_default_window_border(c->win);
+                reset_focus_property();
+        }
 }
 
-static void focus(struct client *c)
+static void do_focus(struct client *c)
+{
+        if (c) {
+                select_window(c->win);
+                set_client_focus(c);
+                grab_buttons(c->win, 1);
+        }
+}
+
+static struct client *focus(struct client *c)
 {
         struct screen *s, *other;
 
         if (0 == c) {
-                unfocus(current_screen->current);
-                reset_focus_property();
-                return;
+                ASSERT(0 == current_screen->current);
+                drawbar(current_screen);
+                return c;
         }
 
         s = c->screen;
+        ASSERT(s);
 
-        if (s != current_screen) {
+        if (s == current_screen) {
+                if (c != current_screen->current) {
+                        unfocus(current_screen->current);
+
+                        stack_pop(c);
+                        stack_push_front(c);
+                }
+        }
+        else {
                 unfocus(current_screen->current);
 
                 other = current_screen;
                 current_screen = s;
 
                 drawbar(other);
-        }
-
-        if (c != current_screen->current) {
-                unfocus(current_screen->current);
 
                 stack_pop(c);
                 stack_push_front(c);
         }
 
-        set_select_window_border(c->win);
-        set_client_focus(c);
-
-        grab_buttons(c->win, 1);
-
-        if (is_tile(c))
-                tile(current_screen);
-
-        stack(current_screen);
-
+        do_focus(c);
         drawbar(current_screen);
+
+        return c;
 }
 
 static void update_client_list(void)
@@ -1171,10 +1166,20 @@ static void update_client_list(void)
 
 static void unmanage(struct client *c)
 {
+        ASSERT(c);
+
+        unfocus(c);
+
         pop(c);
         stack_pop(c);
 
         update_client_list();
+
+        if (is_tile(c))
+                retile(c->screen);
+
+        /* TODO: restack floating clients? */
+        focus(c->screen->current);
 
         free(c);
 }
@@ -1189,17 +1194,21 @@ static struct client *manage(Window win, XWindowAttributes *attr)
         s = c->screen;
         ASSERT(s);
 
+        unfocus(s->current);
+
         push_front(c);
-        stack_push_back(c);
+        stack_push_front(c);
 
         update_client_list();
 
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
 
-        focus(c);
+        if (is_tile(c))
+                retile(s);
+        stack(s);
 
-        return c;
+        return focus(c);
 }
 
 /**********************************************************************/
@@ -1229,14 +1238,21 @@ static void make_screens(void)
         DRW = make_draw_surface(display_width(), FNT->height);
 }
 
+static void zap_bar(struct screen *s)
+{
+        if (s) {
+                XUnmapWindow(DPY, s->bar);
+                XDestroyWindow(DPY, s->bar);
+        }
+}
+
 static void free_screens(void)
 {
         struct screen *s = screen_head, *snext;
         struct client *c, *cnext;
 
         for (; s; snext = s->next, free(s), s = snext) {
-                if (!send(s->bar, WM_DELETE_WINDOW))
-                        zap_window(s->bar);
+                zap_bar(s);
 
                 c = s->head;
                 for (; c; cnext = c->next, free(c), c = cnext)
@@ -1249,27 +1265,13 @@ static int update_screen(struct screen *s, struct rect *r)
 {
         if (memcmp(r, &s->r, sizeof *r)) {
                 memcpy(&s->r, r, sizeof *r);
-
                 XMoveResizeWindow(DPY, s->bar, s->r.x, s->r.y, s->r.w, s->bh);
 
-                tile(s);
+                retile(s);
                 stack(s);
-
-                if (s == current_screen)
-                        focus(s->current);
-
-                return 1;
         }
 
         return 0;
-}
-
-static void remap_quiet(void)
-{
-        map_visible();
-        pause_propagate(ROOT, SubstructureNotifyMask);
-        unmap_invisible();
-        resume_propagate(ROOT, ROOTMASK);
 }
 
 static int update_screens(void)
@@ -1289,19 +1291,12 @@ static int update_screens(void)
 
         for (i = 0; i < n && *pps; ++i, pps = &(*pps)->next) {
                 if (current_screen == (ps = *pps))
-                        /*
-                         * Save the current screen if found:
-                         */
                         pscur = ps;
 
-                dirty = update_screen(ps, prs + i);
+                dirty |= update_screen(ps, prs + i);
         }
 
         for (; i < n; ++i, pps = &(*pps)->next) {
-                /*
-                 * If there are more geometries than screens, create one screen
-                 * for each remaining ones:
-                 */
                 *pps = make_screen(prs + i);
         }
 
@@ -1309,11 +1304,6 @@ static int update_screens(void)
                 dirty = 1;
 
                 if (0 == pscur)
-                        /*
-                         * If current screen has not been found it means it
-                         * is one of the lost screens. Transfer all clients to
-                         * the last valid screen:
-                         */
                         pscur = ps;
 
                 ps = *pps;
@@ -1327,11 +1317,13 @@ static int update_screens(void)
 
                         push_back(ps->head);
                         stack_push_back(ps->focus_head);
+
+                        zap_bar(ps);
                 }
         }
 
+        ASSERT(pscur);
         current_screen = pscur;
-        ASSERT(current_screen);
 
         remap_quiet();
 
@@ -1426,7 +1418,7 @@ static int zoom(void)
                         pop(cur);
                         push_front(cur);
 
-                        tile(current_screen);
+                        retile(current_screen);
                         stack(current_screen);
                 }
         }
@@ -1500,7 +1492,8 @@ static int move_focus_left(void)
                 if (0 == (c = last_visible_client(s->head, cur)))
                         c = last_visible_client(cur->next, 0);
 
-                focus(c);
+                if (c && c != cur)
+                        focus(c);
         }
 
         return 0;
@@ -1518,7 +1511,8 @@ static int move_focus_right(void)
                 if (0 == (c = first_visible_client(cur->next, 0)))
                         c = first_visible_client(s->head, cur);
 
-                focus(c);
+                if (c && c != cur)
+                        focus(c);
         }
 
         return 0;
@@ -1589,21 +1583,20 @@ static int focus_next_screen(void)
 
 static int move_other_screen(struct screen *s, struct client *c)
 {
-        int x, y;
-        struct state *state = state_of(c);
+        struct state *state;
 
-        x = state->g.r.x - c->screen->r.x;
-        y = state->g.r.y - c->screen->r.y;
+        state = state_of(c);
+
+        int xoff = state->g.r.x - c->screen->r.x;
+        int yoff = state->g.r.y - c->screen->r.y;
 
         unfocus(c);
 
         pop(c);
         stack_pop(c);
 
-        x += s->r.x;
-        y += s->r.y;
-
-        XMoveWindow(DPY, c->win, x, y);
+        if (is_tile(c))
+                retile(c->screen);
 
         focus(current_screen->current);
 
@@ -1613,10 +1606,19 @@ static int move_other_screen(struct screen *s, struct client *c)
         push_front(c);
         stack_push_front(c);
 
-        if (is_tile(c))
-                tile(s);
+        xoff += s->r.x;
+        yoff += s->r.y;
 
-        stack(s);
+        XMoveWindow(DPY, c->win, xoff, yoff);
+
+        if (is_visible(c)) {
+                if (is_tile(c))
+                        retile(c->screen);
+                stack(c->screen);
+        }
+        else {
+                unmap_quiet(c);
+        }
 
         return 0;
 }
@@ -1695,7 +1697,7 @@ static int do_move_client(struct client *c)
                         if (!state->floating && (x != r->x || y != r->y)) {
                                 state->floating = 1;
 
-                                tile(c->screen);
+                                retile(c->screen);
                                 stack(c->screen);
                         }
 
@@ -1767,7 +1769,7 @@ static int do_resize_client(struct client *c)
                             (x != r->x + r->w || y != r->y + r->h)) {
                                 state->floating = 1;
 
-                                tile(c->screen);
+                                retile(c->screen);
                                 stack(c->screen);
                         }
 
@@ -1815,8 +1817,10 @@ static int do_tag(void)
 
         remap_quiet();
 
+        retile(current_screen);
+        stack(current_screen);
+
         focus(current_screen->current);
-        drawbar(current_screen);
 
         return 0;
 }
@@ -1879,6 +1883,9 @@ static int tile_current(void)
         if (is_tileable(cur)) {
                 struct state *state = state_of(cur);
                 state->floating = state->fullscreen = 0;
+
+                /* Force retiling */
+                retile(current_screen);
 
                 focus(cur);
         }
@@ -1950,7 +1957,7 @@ static void exit_fullscreen(struct client *c)
 
         move_resize_client(c, 0);
 
-        tile(c->screen);
+        retile(c->screen);
         stack(c->screen);
 }
 
@@ -1971,7 +1978,7 @@ static void enter_fullscreen(struct client *c)
 
         move_resize_client(c, 0);
 
-        tile(c->screen);
+        retile(c->screen);
         stack(c->screen);
 }
 
@@ -2045,20 +2052,27 @@ static int motion_notify_handler(XEvent *arg)
 
 static int enter_notify_handler(XEvent *arg)
 {
+        struct client *c;
+
         XCrossingEvent *ev = &arg->xcrossing;
 
         if (ev->mode != NotifyNormal || ev->detail == NotifyInferior)
                 return 0;
 
-        return focus(client_for(ev->window)), 0;
+        c = client_for(ev->window);
+
+        if (c != current_screen->current)
+                focus(c);
+
+        return 0;
 }
 
 static int focusin_handler(XEvent *arg)
 {
-        struct client *cur = current_screen->current;
+        struct client *c = current_screen->current;
 
-        if (cur && cur->win != arg->xfocus.window)
-                focus(cur);
+        if (c && c->win != arg->xfocus.window)
+                focus(c);
 
         return 0;
 }
@@ -2073,28 +2087,24 @@ static int expose_handler(XEvent *arg)
         return 0;
 }
 
-static int destroy_notify_handler(XEvent *arg)
+static int unmap_destroy_handler(Window w)
 {
-        struct client *c;
+        struct client *c = client_for(w);
 
-        if ((c = client_for(arg->xdestroywindow.window)))
+        if (c)
                 unmanage(c);
-
-        focus(current_screen->current);
 
         return 0;
 }
 
+static int destroy_notify_handler(XEvent *arg)
+{
+        return unmap_destroy_handler(arg->xdestroywindow.window);
+}
+
 static int unmap_notify_handler(XEvent *arg)
 {
-        struct client *c;
-
-        if ((c = client_for(arg->xunmap.window)))
-                unmanage(c);
-
-        focus(current_screen->current);
-
-        return 0;
+        return unmap_destroy_handler(arg->xunmap.window);
 }
 
 static int map_request_handler(XEvent *arg)
@@ -2126,7 +2136,7 @@ static int configure_request_handler(XEvent *arg)
                 XSync(DPY, 0);
 
         if ((c = client_for(ev->window)) && is_visible_tile(c))
-                tile(c->screen);
+                retile(c->screen);
 
         return 0;
 }
@@ -2164,7 +2174,7 @@ static int property_notify_handler(XEvent *arg)
                         if (!is_floating(c) && transient_client_for(c->win)) {
                                 state_of(c)->floating = 1;
 
-                                tile(c->screen);
+                                retile(c->screen);
                                 stack(c->screen);
                         }
                         break;
@@ -2368,9 +2378,7 @@ static void run(void)
 {
         XEvent ev;
 
-        XSync(DPY, 0);
-
-        for (; g_running && !XNextEvent(DPY, &ev);)
+        for (XSync(DPY, 0); g_running && !XNextEvent(DPY, &ev);)
                 handle_event(&ev);
 
         XSync(DPY, 1);

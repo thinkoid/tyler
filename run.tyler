@@ -1,15 +1,11 @@
+#!/bin/bash
 
 echo 'Launching nested X Server...'
 
-Xephyr :3 +xinerama -ac -reset -retro -screen 1920x1080 &
+Xephyr :3 +xinerama -dpi 230 -ac -reset -retro -screen 2560x1440 &>/dev/null &
 X_PID=$!
 
 sleep 1
 
-DISPLAY=:3 status &
-S_PID=$!
-
-sleep 1
-
-trap 'kill $X_PID $S_PID' EXIT
-DISPLAY=:3 ./tyler
+trap 'kill $X_PID ' EXIT
+DISPLAY=:3 ./tyler >/tmp/tyler.log

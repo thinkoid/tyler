@@ -31,6 +31,9 @@ void set_fullscreen_property(Window win);
 void set_default_window_border(Window win);
 void set_select_window_border(Window win);
 
+void select_window(Window win);
+void unselect_window(Window win);
+
 int send(Window, Atom);
 
 void zap_window(Window win);

@@ -122,6 +122,11 @@ void set_default_window_border(Window win)
         set_default_window_border_color(win);
 }
 
+void unselect_window(Window win)
+{
+        set_default_window_border(win);
+}
+
 static void set_select_window_border_color(Window win)
 {
         XSetWindowBorder(DPY, win, SELECT_BORDER);
@@ -131,6 +136,11 @@ void set_select_window_border(Window win)
 {
         set_default_window_border_width(win);
         set_select_window_border_color(win);
+}
+
+void select_window(Window win)
+{
+        set_select_window_border(win);
 }
 
 static int do_send(Window win, Atom proto)
