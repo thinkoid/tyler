@@ -21,7 +21,7 @@ static const int g_cursors[] = {
 };
 
 static const char *g_termcmd[] = {
-        "sterm", "desktop", 0
+        "st", 0
 };
 
 static int g_snap = 5;
