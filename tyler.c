@@ -1099,7 +1099,6 @@ static struct client *focus(struct client *c)
         struct screen *s, *other;
 
         if (0 == c) {
-                ASSERT(0 == current_screen->current);
                 drawbar(current_screen);
                 return c;
         }
@@ -1564,6 +1563,22 @@ static struct screen *prev_screen(struct screen *arg)
         return s;
 }
 
+static void focus_other_screen(struct screen *other)
+{
+        struct screen *save = current_screen;
+        ASSERT(save);
+        
+        ASSERT(other);
+        ASSERT(other != current_screen);
+        
+        unfocus(current_screen->current);
+        current_screen = other;
+        
+        drawbar(save);
+        
+        focus(current_screen->current);
+}
+
 static int focus_prev_screen(void)
 {
         struct screen *s;
@@ -1571,7 +1586,9 @@ static int focus_prev_screen(void)
         if (0 == (s = prev_screen(current_screen)))
                 return 0;
 
-        return focus((current_screen = s)->current), 0;
+        focus_other_screen(s);
+
+        return 0;
 }
 
 static int focus_next_screen(void)
@@ -1581,7 +1598,9 @@ static int focus_next_screen(void)
         if (0 == (s = next_screen(current_screen)))
                 return 0;
 
-        return focus((current_screen = s)->current), 0;
+        focus_other_screen(s);
+
+        return 0;
 }
 
 static int move_other_screen(struct screen *s, struct client *c)
