@@ -437,7 +437,7 @@ static void drawbar(struct screen *s)
 static void drawbars(void)
 {
         struct screen *s = screen_head;
-        for (drawbar(s); s; drawbar(s), s = s->next)
+        for (; s; drawbar(s), s = s->next)
                 ;
 }
 
