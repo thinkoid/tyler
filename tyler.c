@@ -424,11 +424,14 @@ static void drawbar(struct screen *s)
 
         fill(DRW, &r, XFT_NORMAL_BG);
 
+        /* Draw tags to the left ...  */
         left  = drawtags(s);
 
+        /* ... then the status to the right ... */
         if (s == current_screen)
                 right = drawstatus(s, left);
 
+        /* ... and the title, last. */
         drawtitle(s, left, right);
 
         copy(DRW, s->bar, s->r.x, 0, s->r.w, s->bh, 0, 0);
