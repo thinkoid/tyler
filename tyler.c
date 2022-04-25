@@ -1203,12 +1203,12 @@ static struct client *manage(Window win, XWindowAttributes *attr)
 
         update_client_list();
 
-        XSelectInput(DPY, c->win, CLIENTMASK);
-        XMapWindow(DPY, c->win);
-
         if (is_tile(c))
                 retile(s);
         stack(s);
+
+        XSelectInput(DPY, c->win, CLIENTMASK);
+        XMapWindow(DPY, c->win);
 
         return focus(c);
 }
@@ -1605,20 +1605,26 @@ static int focus_next_screen(void)
 
 static int move_other_screen(struct screen *s, struct client *c)
 {
+        int xoff, yoff;
         struct state *state;
+
+        ASSERT(c && c->screen && c->screen == current_screen);
+        ASSERT(s && s != current_screen);
 
         state = state_of(c);
 
-        int xoff = state->g.r.x - c->screen->r.x;
-        int yoff = state->g.r.y - c->screen->r.y;
-
         unfocus(c);
+
+        xoff = state->g.r.x - c->screen->r.x + s->r.x;
+        yoff = state->g.r.y - c->screen->r.y + s->r.y;
+
+        XMoveWindow(DPY, c->win, xoff, yoff);
 
         pop(c);
         stack_pop(c);
 
         if (is_tile(c))
-                retile(c->screen);
+                retile(current_screen);
 
         focus(current_screen->current);
 
@@ -1628,19 +1634,13 @@ static int move_other_screen(struct screen *s, struct client *c)
         push_front(c);
         stack_push_front(c);
 
-        xoff += s->r.x;
-        yoff += s->r.y;
-
-        XMoveWindow(DPY, c->win, xoff, yoff);
-
         if (is_visible(c)) {
                 if (is_tile(c))
-                        retile(c->screen);
-                stack(c->screen);
+                        retile(s);
+                stack(s);
         }
-        else {
+        else
                 unmap_quiet(c);
-        }
 
         return 0;
 }
