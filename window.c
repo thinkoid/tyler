@@ -59,8 +59,6 @@ void set_focus_property(Window win)
         XSetInputFocus(DPY, win, RevertToPointerRoot, CurrentTime);
         XChangeProperty(DPY, ROOT, NET_ACTIVE_WINDOW, XA_WINDOW, 32,
                         PropModeReplace, (unsigned char *)&win, 1);
-
-        XSync(DPY, 0);
 }
 
 void reset_urgent(Window win)
