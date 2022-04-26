@@ -1132,6 +1132,14 @@ static struct client *focus(struct client *c)
         return c;
 }
 
+static void update_client_list_with(struct client *c)
+{
+        if (c) {
+                XChangeProperty(DPY, ROOT, NET_CLIENT_LIST, XA_WINDOW, 32,
+                                PropModeAppend, (unsigned char *)&(c->win), 1);
+        }
+}
+
 static void update_client_list(void)
 {
         struct screen *s;
