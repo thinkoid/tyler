@@ -8,4 +8,4 @@ X_PID=$!
 sleep 1
 
 trap 'kill $X_PID ' EXIT
-DISPLAY=:3 ./tyler >/tmp/tyler.log
+DISPLAY=:3 ./tyler
