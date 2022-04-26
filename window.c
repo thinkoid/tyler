@@ -75,6 +75,13 @@ void reset_urgent(Window win)
         }
 }
 
+void set_normal(Window win)
+{
+        long data[] = { NormalState, None };
+        XChangeProperty(DPY, win, WM_STATE, WM_STATE, 32, PropModeReplace,
+                        (unsigned char *)data, 2);
+}
+
 void set_urgent(Window win)
 {
         XWMHints *p;

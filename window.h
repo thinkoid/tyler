@@ -17,6 +17,8 @@ int has_protocol(Window win, Atom proto);
 
 void send_focus(Window win);
 
+void set_normal(Window win);
+
 void reset_focus_property(void);
 void set_focus_property(Window win);
 
