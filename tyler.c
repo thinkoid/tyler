@@ -907,9 +907,6 @@ static void stack_push_front(struct client *c)
         if (c) {
                 c->focus_next = c->screen->focus_head;
                 c->screen->focus_head = c;
-
-                if (is_visible(c))
-                        c->screen->current = c;
         }
 }
 
@@ -979,12 +976,9 @@ static void stack_pop(struct client *c)
         *pptr = c->focus_next;
 
         c->focus_next = 0;
-
-        if (c == c->screen->current)
-                c->screen->current = stack_top(c->screen);
 }
 
-static void stack(struct screen *s)
+static void restack(struct screen *s)
 {
         XEvent ignore;
         struct client *c, *cur;
@@ -1096,34 +1090,24 @@ static void do_focus(struct client *c)
 
 static struct client *focus(struct client *c)
 {
-        struct screen *s, *other;
-
         if (0 == c) {
                 drawbar(current_screen);
-                return c;
+                return 0;
         }
 
-        s = c->screen;
-        ASSERT(s);
-
-        if (s == current_screen) {
+        if (c->screen == current_screen) {
                 if (c != current_screen->current) {
                         unfocus(current_screen->current);
-
-                        stack_pop(c);
-                        stack_push_front(c);
+                        current_screen->current = c;
                 }
         }
         else {
                 unfocus(current_screen->current);
+                drawbar(current_screen);
 
-                other = current_screen;
-                current_screen = s;
+                reset_focus_property();
 
-                drawbar(other);
-
-                stack_pop(c);
-                stack_push_front(c);
+                current_screen = c->screen;
         }
 
         do_focus(c);
@@ -1166,9 +1150,10 @@ static void update_client_list(void)
                 }
         }
 
-        if (i)
+        if (i) {
                 XChangeProperty(DPY, ROOT, NET_CLIENT_LIST, XA_WINDOW, 32,
                                 PropModeReplace, (unsigned char *)pbuf, i);
+        }
 
         if (pbuf != buf)
                 free(pbuf);
@@ -1201,19 +1186,21 @@ static struct client *manage(Window win, XWindowAttributes *attr)
         struct client *c = make_client(win, attr);
         ASSERT(c);
 
+        set_normal(c->win);
+
         s = c->screen;
         ASSERT(s);
-
-        unfocus(s->current);
 
         push_front(c);
         stack_push_front(c);
 
-        update_client_list();
+        update_client_list_with(c);
 
         if (is_tile(c))
                 retile(s);
-        stack(s);
+
+        if (is_floating(c))
+                XRaiseWindow(DPY, c->win);
 
         XSelectInput(DPY, c->win, CLIENTMASK);
         XMapWindow(DPY, c->win);
@@ -1278,7 +1265,7 @@ static int update_screen(struct screen *s, struct rect *r)
                 XMoveResizeWindow(DPY, s->bar, s->r.x, s->r.y, s->r.w, s->bh);
 
                 retile(s);
-                stack(s);
+                restack(s);
         }
 
         return 0;
@@ -1429,7 +1416,7 @@ static int zoom(void)
                         push_front(cur);
 
                         retile(current_screen);
-                        stack(current_screen);
+                        restack(current_screen);
                 }
         }
 
@@ -1575,15 +1562,15 @@ static void focus_other_screen(struct screen *other)
 {
         struct screen *save = current_screen;
         ASSERT(save);
-        
+
         ASSERT(other);
         ASSERT(other != current_screen);
-        
+
         unfocus(current_screen->current);
         current_screen = other;
-        
+
         drawbar(save);
-        
+
         focus(current_screen->current);
 }
 
@@ -1645,7 +1632,7 @@ static int move_other_screen(struct screen *s, struct client *c)
         if (is_visible(c)) {
                 if (is_tile(c))
                         retile(s);
-                stack(s);
+                restack(s);
         }
         else
                 unmap_quiet(c);
@@ -1728,7 +1715,7 @@ static int do_move_client(struct client *c)
                                 state->floating = 1;
 
                                 retile(c->screen);
-                                stack(c->screen);
+                                restack(c->screen);
                         }
 
                         XMoveWindow(DPY, c->win, x, y);
@@ -1800,7 +1787,7 @@ static int do_resize_client(struct client *c)
                                 state->floating = 1;
 
                                 retile(c->screen);
-                                stack(c->screen);
+                                restack(c->screen);
                         }
 
                         if (x - r->x < minw) x = r->x + minw;
@@ -1848,7 +1835,7 @@ static int do_tag(void)
         remap_quiet();
 
         retile(current_screen);
-        stack(current_screen);
+        restack(current_screen);
 
         focus(current_screen->current);
 
@@ -1988,7 +1975,7 @@ static void exit_fullscreen(struct client *c)
         move_resize_client(c, 0);
 
         retile(c->screen);
-        stack(c->screen);
+        restack(c->screen);
 }
 
 static void enter_fullscreen(struct client *c)
@@ -2009,7 +1996,7 @@ static void enter_fullscreen(struct client *c)
         move_resize_client(c, 0);
 
         retile(c->screen);
-        stack(c->screen);
+        restack(c->screen);
 }
 
 static void mark_urgent(struct client *c)
@@ -2097,6 +2084,7 @@ static int enter_notify_handler(XEvent *arg)
         return 0;
 }
 
+/* Unused */
 static int focusin_handler(XEvent *arg)
 {
         struct client *c = current_screen->current;
@@ -2205,7 +2193,7 @@ static int property_notify_handler(XEvent *arg)
                                 state_of(c)->floating = 1;
 
                                 retile(c->screen);
-                                stack(c->screen);
+                                restack(c->screen);
                         }
                         break;
 
@@ -2265,7 +2253,7 @@ static int handle_event(XEvent *arg)
                 motion_notify_handler, /* 6 */
                 enter_notify_handler, /* 7 */
                 0,
-                focusin_handler, /* 9 */
+                0, /* focusin_handler, 9 */
                 0, 0,
                 expose_handler, /* 12 */
                 0, 0, 0, 0,
