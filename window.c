@@ -50,7 +50,7 @@ int has_protocol(Window win, Atom proto)
 
 void reset_focus_property(void)
 {
-        XSetInputFocus(DPY, None, RevertToPointerRoot, CurrentTime);
+        XSetInputFocus(DPY, ROOT, RevertToPointerRoot, CurrentTime);
         XDeleteProperty(DPY, ROOT, NET_ACTIVE_WINDOW);
 }
 
