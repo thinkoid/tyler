@@ -1032,7 +1032,6 @@ static void set_client_focus(struct client *c)
 static void unfocus(struct client *c)
 {
         if (c) {
-                /* TODO: clients may not be visible */
                 grab_buttons(c->win, 0);
                 set_default_window_border(c->win);
                 reset_focus_property();
