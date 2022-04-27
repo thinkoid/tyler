@@ -1057,7 +1057,9 @@ static struct client *focus(struct client *c)
         if (c->screen == current_screen) {
                 if (c != current_screen->current) {
                         unfocus(current_screen->current);
-                        current_screen->current = c;
+
+                        if (is_floating(current_screen->current = c))
+                                XRaiseWindow(DPY, c->win);
                 }
         }
         else {
