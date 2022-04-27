@@ -1134,8 +1134,8 @@ static void unmanage(struct client *c)
         if (is_tile(c))
                 retile(c->screen);
 
-        /* TODO: restack floating clients? */
-        focus(c->screen->current);
+        if (c == c->screen->current)
+                focus(stack_top(c->screen));
 
         free(c);
 }
