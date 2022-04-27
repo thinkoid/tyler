@@ -333,7 +333,7 @@ static int drawtags(struct screen *s)
                             fg, bg);
         }
 
-        return drawtag(s, "[]=", x, 0, 0, XFT_NORMAL_FG, XFT_NORMAL_BG);
+        return x;
 }
 
 static char *title_of(Window win, char *buf, size_t len)
