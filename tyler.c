@@ -1935,7 +1935,9 @@ static void exit_fullscreen(struct client *c)
 
         move_resize_client(c, 0);
 
-        retile(c->screen);
+        if (is_tile(c))
+                retile(c->screen);
+
         restack(c->screen);
 }
 
