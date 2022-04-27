@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <X11/X.h>
+#include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
 
@@ -411,7 +412,7 @@ static void drawtitle(struct screen *s, int left, int right)
                 free(pbuf);
 }
 
-static void drawbar(struct screen *s)
+static void do_drawbar(struct screen *s)
 {
         int left = 0, right = s->r.w;
 
@@ -435,6 +436,12 @@ static void drawbar(struct screen *s)
         drawtitle(s, left, right);
 
         copy(DRW, s->bar, s->r.x, 0, s->r.w, s->bh, 0, 0);
+}
+
+static void drawbar(struct screen *s)
+{
+        if (s->showbar)
+                do_drawbar(s);
 }
 
 static void drawbars(void)
@@ -1435,6 +1442,16 @@ static int spawn_program(void)
 
 static int toggle_bar(void)
 {
+        struct screen *s = current_screen;
+
+        if ((s->showbar = s->showbar ? 0 : 1))
+                XMapWindow(DPY, s->bar);
+        else
+                XUnmapWindow(DPY, s->bar);
+
+        retile(s);
+        drawbar(s);
+
         return 0;
 }
 
