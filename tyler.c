@@ -980,64 +980,27 @@ static void stack_pop(struct client *c)
 
 static void restack(struct screen *s)
 {
+        struct client *c;
+
         XEvent ignore;
-        struct client *c, *cur;
+        XWindowChanges wc = { 0 };
 
-        Window ws[64], *pws = ws;
-        size_t n = 1, i = 1, j = 1, k = 1;
-
-        for (c = s->head; c; c = c->next) {
-                if (is_visible(c)) {
-                        ++n;
-
-                        if (is_fft(c)) {
-                                ++k;
-
-                                if (!state_of(c)->fullscreen)
-                                        ++j;
-                        }
-                }
-        }
-
-        if (1 == n)
+        if (0 == (c = s->current))
                 return;
 
-        if (n > SIZEOF(ws)) {
-                pws = malloc_(n * sizeof *pws);
-        }
+        if (is_floating(c))
+                XRaiseWindow(DPY, s->current->win);
 
-        pws[0] = s->bar;
+        wc.stack_mode = Below;
+        wc.sibling = s->bar;
 
-        if ((cur = s->current)) {
-                if (is_fft(cur)) {
-                        if (state_of(cur)->fullscreen) {
-                                pws[j++] = cur->win;
-                        } else {
-                                pws[i++] = cur->win;
-                        }
-                } else {
-                        pws[j++] = cur->win;
-                        ++k;
+        for (c = s->focus_head; c; c = c->focus_next) {
+                if (!is_floating(c) && is_visible(c)) {
+                        XConfigureWindow(DPY, c->win, CWSibling | CWStackMode, &wc);
+                        wc.sibling = c->win;
                 }
+
         }
-
-        for (c = s->head; c; c = c->next) {
-                if (c == cur || !is_visible(c))
-                        continue;
-
-                if (is_fft(c)) {
-                        if (state_of(c)->fullscreen) {
-                                pws[j++] = c->win;
-                        } else {
-                                pws[i++] = c->win;
-                        }
-                } else {
-                        pws[k++] = c->win;
-                }
-        }
-
-        if (n)
-                XRestackWindows(DPY, pws, n);
 
         /*
          * An EnterNotify event is also generated when a window is mapped over
@@ -1054,9 +1017,6 @@ static void restack(struct screen *s)
          */
         XSync(DPY, 0);
         while (XCheckMaskEvent(DPY, EnterWindowMask, &ignore));
-
-        if (pws != ws)
-                free(pws);
 }
 
 static void set_client_focus(struct client *c)
