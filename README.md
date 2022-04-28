@@ -18,6 +18,12 @@ marshal data  between the  WM and its  status bar. So,  it re-acquired  a status
 bar. Just  like dwm, structured  in three fields.  It's hard to  improve optimal
 designs.
 
+v0.9
+----
+
+Fixes for focus jumping and stuttering caused by overcomplicated and aggressive
+tiling.
+
 v0.8
 ----
 
