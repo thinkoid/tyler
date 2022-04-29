@@ -395,13 +395,13 @@ static void drawtitle(struct screen *s, int left, int right)
         r.w = right - left;
         r.h = s->bh;
 
-        fill(DRW, &r, s == current_screen ? XFT_SELECT_BG : XFT_NORMAL_BG);
-
         if (0 == (c = s->current))
                 return;
 
         if (0 == (pbuf = title_of(c->win, buf, n)))
-                strcpy((pbuf = buf), "(null)");
+                return;
+
+        fill(DRW, &r, s == current_screen ? XFT_SELECT_BG : XFT_NORMAL_BG);
 
         n = strlen(pbuf);
         for (; n && r.w < text_width(pbuf, FNT); pbuf[--n] = 0) ;
