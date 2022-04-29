@@ -10,7 +10,9 @@ static int g_border_width =  1;
 static int   g_master_size  = 1;
 static float g_master_ratio = .5f;
 
-static const char *g_fontname = "Iosevka Light:size=8.5";
+static size_t g_margin = 2;
+
+static const char *g_fontname = "Iosevka Light:size=12";
 
 static const char *g_colors[] = {
         "#444444", "#222222", "#BBBBBB", "#93a660", "#8c9440", "#EEEEEE"
@@ -35,6 +37,11 @@ const char *config_fontname(void)
 const char **config_colors(void)
 {
         return g_colors;
+}
+
+size_t config_margin(void)
+{
+        return g_margin;
 }
 
 size_t config_colors_size(void)

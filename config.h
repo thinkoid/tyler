@@ -18,6 +18,8 @@ size_t config_cursors_size(void);
 
 const char **config_termcmd(void);
 
+size_t config_margin(void);
+
 int config_showbar(void);
 int config_border_width(void);
 

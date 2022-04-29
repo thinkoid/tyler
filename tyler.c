@@ -180,7 +180,7 @@ static int is_visible_tile(struct client *c)
 
 static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
 {
-        int x, y, w, h, left, dist;
+        int x, y, w, h, left, dist, margin;
 
         struct rect r = s->r;
 
@@ -189,9 +189,17 @@ static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
                 r.h -= s->bh;
         }
 
+        margin = config_margin();
+
         switch (n) {
-        case 1:
+        case 1: {
+                r.x += margin;
+                r.y += margin;
+                r.w -= (margin << 1);
+                r.h -= (margin << 1);
+                
                 memcpy(rs, &r, sizeof *rs);
+        }
         case 0:
                 break;
 
@@ -203,10 +211,10 @@ static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
 
                 left = (int)(w * s->master_ratio);
 
-                rs[0].x = x;
-                rs[0].y = y;
-                rs[0].w = left;
-                rs[0].h = h;
+                rs[0].x = x + margin;
+                rs[0].y = y + margin;
+                rs[0].w = left - (margin << 1);
+                rs[0].h = h - (margin << 1);
 
                 ++rs;
 
@@ -218,10 +226,10 @@ static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
 
                 for (dist = 0; 0 < h; y += dist, h -= dist, ++rs) {
                         dist = (double)h / n--;
-                        rs[0].x = x;
-                        rs[0].y = y;
-                        rs[0].w = w;
-                        rs[0].h = dist;
+                        rs[0].x = x + margin;
+                        rs[0].y = y + margin;
+                        rs[0].w = w - (margin << 1);
+                        rs[0].h = dist - (margin << 1);
                 }
                 break;
         }
