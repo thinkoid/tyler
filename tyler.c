@@ -1571,7 +1571,7 @@ static int focus_next_screen(void)
         return focus_other_screen(next_screen(current_screen));
 }
 
-static int move_other_screen(struct screen *s, struct client *c)
+static int move_other_screen(struct client *c, struct screen *s)
 {
         int xoff, yoff;
         struct state *state;
@@ -1626,7 +1626,7 @@ static int move_prev_screen(void)
             0 == (s = prev_screen(current_screen)))
                 return 0;
 
-        return move_other_screen(s, c);
+        return move_other_screen(c, s);
 }
 
 static int move_next_screen(void)
@@ -1638,7 +1638,7 @@ static int move_next_screen(void)
             0 == (s = next_screen(current_screen)))
                 return 0;
 
-        return move_other_screen(s, c);
+        return move_other_screen(c, s);
 }
 
 static int quit(void)
