@@ -2059,17 +2059,6 @@ static int enter_notify_handler(XEvent *arg)
         return 0;
 }
 
-/* Unused */
-static int focusin_handler(XEvent *arg)
-{
-        struct client *c = current_screen->current;
-
-        if (c && c->win != arg->xfocus.window)
-                focus(c);
-
-        return 0;
-}
-
 static int expose_handler(XEvent *arg)
 {
         XExposeEvent *ev = &arg->xexpose;
