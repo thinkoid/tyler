@@ -197,7 +197,7 @@ static void get_tiles_geometries(struct screen *s, struct rect *rs, size_t n)
                 r.y += margin;
                 r.w -= (margin << 1);
                 r.h -= (margin << 1);
-                
+
                 memcpy(rs, &r, sizeof *rs);
         }
         case 0:
@@ -272,7 +272,7 @@ static int drawtag(struct screen *s, const char *tag,
          *     |      |
          *     v      v
          *  +-----+-------+
-         *  |  □  |  /|   |
+         *  |  □ |  /|   |
          *  |     |   |   |
          *  +-----+-------+
          *  | <-> | <---> |
