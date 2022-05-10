@@ -1064,6 +1064,8 @@ static void do_focus(struct client *c)
 
 static struct client *focus(struct client *c)
 {
+        struct screen *s;
+
         if (0 == c) {
                 drawbar(current_screen);
                 return 0;
@@ -1079,11 +1081,13 @@ static struct client *focus(struct client *c)
         }
         else {
                 unfocus(current_screen->current);
-                drawbar(current_screen);
+
+                s = current_screen;
+                current_screen = c->screen;
+
+                drawbar(s);
 
                 reset_focus_property();
-
-                current_screen = c->screen;
         }
 
         do_focus(c);
