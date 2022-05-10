@@ -1594,18 +1594,22 @@ static int move_other_screen(struct screen *s, struct client *c)
         if (is_tile(c))
                 retile(current_screen);
 
+        current_screen->current = stack_top(current_screen);
         focus(current_screen->current);
 
         c->screen = s;
-        state->tags = current_screen->tags;
 
         push_front(c);
         stack_push_front(c);
 
         if (is_visible(c)) {
+                s->current = c;
+
                 if (is_tile(c))
                         retile(s);
+
                 restack(s);
+                drawbar(s);
         }
         else
                 unmap_quiet(c);
