@@ -2037,10 +2037,10 @@ static int motion_notify_handler(XEvent *arg)
 
         if (ROOT == ev->window) {
                 s = screen_at(x, y);
-                ASSERT(s);
-
-                if (s && s != current_screen)
+                if (s && s != current_screen) {
+                        unfocus(current_screen->current);
                         focus((current_screen = s)->current);
+                }
         }
 
         return 0;
