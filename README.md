@@ -18,6 +18,11 @@ marshal data  between the  WM and its  status bar. So,  it re-acquired  a status
 bar. Just  like dwm, structured  in three fields.  It's hard to  improve optimal
 designs.
 
+v0.11
+-----
+
+Bug fixes in moving clients between screens.
+
 v0.9
 ----
 
