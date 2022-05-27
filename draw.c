@@ -44,24 +44,15 @@ struct draw_surface *make_draw_surface(int w, int h)
 
         p->drw = XCreatePixmap(DPY, ROOT, w, h, DefaultDepth(DPY, SCRN));
 
-        if (0 == p->drw) {
-                fprintf(stderr, "XCreatePixmap(%d, %d) failed", w, h);
-                goto bottom;
-        }
-
         p->xft = XftDrawCreate(DPY, p->drw, VISUAL, COLORMAP);
-
         if (0 == p->xft) {
                 fprintf(stderr, "XftDrawCreate failed");
-                goto top;
+                goto end;
         }
 
         return p;
-
-top:
+end:
         XFreePixmap(DPY, p->drw);
-
-bottom:
         free(p);
 
         return 0;
