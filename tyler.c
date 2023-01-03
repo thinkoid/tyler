@@ -1945,7 +1945,9 @@ static void exit_fullscreen(struct client *c)
 {
         struct state *state;
 
-        ASSERT(1 == c->current_state);
+        if (1 != c->current_state)
+                return;
+
         c->current_state = 0;
 
         state = state_of(c);
@@ -1965,7 +1967,9 @@ static void enter_fullscreen(struct client *c)
 {
         struct state *state = state_of(c);
 
-        ASSERT(0 == c->current_state);
+        if (c->current_state)
+                return;
+
         c->state[(c->current_state = 1)] = *state;
 
         state = state_of(c);
