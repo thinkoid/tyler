@@ -3,23 +3,114 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include <wayland-server-core.h>
+
+#include <xkbcommon/xkbcommon.h>
 
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_input_device.h>
+#include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_keyboard_group.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
 /*
  * Unused as yet; proves the wayland-scanner rigging end to end.
  */
 #include <xdg-shell-protocol.h>
+
+#include "config.h"
+
+#define LISTEN(src, listener, handler)             \
+        do {                                       \
+                (listener)->notify = (handler);    \
+                wl_signal_add((src), (listener));  \
+        } while (0)
+
+/*
+ * A client's mutable half, double-buffered as in classic: fullscreen
+ * (later) flips current_state instead of remembering geometry ad hoc.
+ * min/max size hints stay in wlr_xdg_toplevel's own state — fixed and
+ * transient are derived, not stored.
+ */
+struct state {
+        struct wlr_box r;               /* border box, layout coordinates */
+        unsigned tags;
+
+        unsigned floating   : 1;
+        unsigned fullscreen : 1;
+        unsigned urgent     : 1;
+};
+
+struct client {
+        struct wl_list link;            /* in clients, global */
+        struct wl_list focus_link;      /* in fstack, global MRU */
+
+        struct screen *screen;          /* NULL is legal: orphan */
+
+        struct state state[2];
+        int current_state;
+
+        struct wlr_xdg_toplevel *toplevel;
+        struct wlr_scene_tree *scene;
+        struct wlr_scene_tree *scene_surface;
+        struct wlr_scene_rect *border[4];
+
+        struct wl_listener commit;
+        struct wl_listener map;
+        struct wl_listener unmap;
+        struct wl_listener destroy;
+};
+
+struct screen {
+        struct wl_list link;            /* in screens */
+
+        struct wlr_output *output;      /* invariant: never NULL */
+        struct wlr_scene_output *scene_output;
+
+        struct wlr_box area;            /* layout coordinates, full */
+        struct wlr_box warea;           /* minus the bar strip */
+
+        unsigned tags;
+        float master_ratio;
+        int showbar, bh;
+
+        struct wl_listener frame;
+        struct wl_listener request_state;
+        struct wl_listener destroy;
+};
+
+/*
+ * Per-output state that survives the output: written back on death,
+ * read on (re)appearance. Keyed by output name; process-lifetime scope
+ * is deliberate — hibernation keeps the process alive, and that is the
+ * churn case.
+ */
+struct screen_memory {
+        char name[64];
+        unsigned tags;
+        float master_ratio;
+        int showbar;
+};
+
+struct popup {
+        struct wlr_xdg_popup *popup;
+
+        struct wl_listener commit;
+        struct wl_listener destroy;
+};
 
 static struct wl_display *display;
 static struct wl_event_loop *event_loop;
@@ -29,9 +120,30 @@ static struct wlr_backend *backend;
 static struct wlr_renderer *renderer;
 static struct wlr_allocator *allocator;
 
+static struct wlr_scene *scene;
+static struct wlr_scene_output_layout *scene_layout;
 static struct wlr_output_layout *output_layout;
 
+static struct wlr_xdg_shell *xdg_shell;
+
+static struct wlr_seat *seat;
+static struct wlr_keyboard_group *kb_group;
+
+static struct wl_list screens;
+static struct wl_list clients;
+static struct wl_list fstack;
+
+static struct screen *current_screen;
+
+static struct screen_memory screen_memories[8];
+
 static struct wl_listener new_output_listener;
+static struct wl_listener layout_change_listener;
+static struct wl_listener new_toplevel_listener;
+static struct wl_listener new_popup_listener;
+static struct wl_listener new_input_listener;
+static struct wl_listener kb_key_listener;
+static struct wl_listener kb_modifiers_listener;
 
 static void die(const char *s)
 {
@@ -39,14 +151,283 @@ static void die(const char *s)
         exit(1);
 }
 
+static struct state *state_of(struct client *c)
+{
+        return &c->state[c->current_state];
+}
+
+static int visible_on(struct client *c, struct screen *s)
+{
+        return s && c->screen == s && (state_of(c)->tags & s->tags);
+}
+
+static int tiled_on(struct client *c, struct screen *s)
+{
+        return visible_on(c, s) &&
+                !state_of(c)->floating && !state_of(c)->fullscreen;
+}
+
+/*
+ * The focused client is never stored, only computed — a dangling
+ * "current" pointer is unrepresentable.
+ */
+static struct client *current_client(void)
+{
+        struct client *c;
+
+        wl_list_for_each(c, &fstack, focus_link)
+                if (visible_on(c, current_screen))
+                        return c;
+
+        return 0;
+}
+
+static int client_is_fixed(struct client *c)
+{
+        struct wlr_xdg_toplevel_state *s = &c->toplevel->current;
+
+        return 0 < s->min_width && 0 < s->min_height &&
+                s->min_width == s->max_width &&
+                s->min_height == s->max_height;
+}
+
+static void set_border_color(struct client *c, const float color[4])
+{
+        size_t i;
+
+        /* an unmapping client's rects are already gone (focus sees it
+         * as the outgoing surface) */
+        if (0 == c->border[0])
+                return;
+
+        for (i = 0; i < 4; ++i)
+                wlr_scene_rect_set_color(c->border[i], color);
+}
+
+/**********************************************************************/
+/* Screens                                                            */
+
+static struct screen_memory *screen_memory_find(const char *name)
+{
+        size_t i;
+
+        for (i = 0; i < sizeof screen_memories / sizeof *screen_memories; ++i)
+                if (0 == strcmp(screen_memories[i].name, name))
+                        return &screen_memories[i];
+
+        return 0;
+}
+
+static void screen_memory_save(struct screen *s)
+{
+        struct screen_memory *m = screen_memory_find(s->output->name);
+        size_t i;
+
+        if (0 == m) {
+                for (i = 0;
+                     i < sizeof screen_memories / sizeof *screen_memories; ++i)
+                        if (0 == screen_memories[i].name[0]) {
+                                m = &screen_memories[i];
+                                break;
+                        }
+        }
+
+        /* table full: this output degrades to defaults, never crashes */
+        if (0 == m)
+                return;
+
+        snprintf(m->name, sizeof m->name, "%s", s->output->name);
+        m->tags = s->tags;
+        m->master_ratio = s->master_ratio;
+        m->showbar = s->showbar;
+}
+
+static void resize(struct client *, struct wlr_box);
+
+/*
+ * Classic's tile: one master column on the left, ratio-split, the rest
+ * stacked to the right; every cell inset by margin. A lone client gets
+ * the whole work area.
+ */
+static void tile(struct screen *s)
+{
+        struct client *c;
+        int n = 0, i = 0, left, dist;
+        int x, y, w, h;
+        int sx, sy, sw, sh, sn;
+
+        wl_list_for_each(c, &clients, link)
+                if (tiled_on(c, s))
+                        ++n;
+
+        if (0 == n)
+                return;
+
+        x = s->warea.x;
+        y = s->warea.y;
+        w = s->warea.width;
+        h = s->warea.height;
+
+        left = 1 == n ? w : (int)(w * s->master_ratio);
+
+        sx = x + left;
+        sy = y;
+        sw = w - left;
+        sh = h;
+        sn = n - 1;
+
+        wl_list_for_each(c, &clients, link) {
+                if (!tiled_on(c, s))
+                        continue;
+
+                if (0 == i++) {
+                        resize(c, (struct wlr_box){
+                                        x + margin, y + margin,
+                                        left - 2 * margin, h - 2 * margin });
+                        continue;
+                }
+
+                dist = sh / sn--;
+                resize(c, (struct wlr_box){
+                                sx + margin, sy + margin,
+                                sw - 2 * margin, dist - 2 * margin });
+
+                sy += dist;
+                sh -= dist;
+        }
+}
+
+static void arrange(struct screen *s)
+{
+        struct client *c;
+
+        if (0 == s)
+                return;
+
+        wl_list_for_each(c, &clients, link)
+                if (c->screen == s)
+                        wlr_scene_node_set_enabled(&c->scene->node,
+                                                   visible_on(c, s));
+
+        tile(s);
+}
+
+/*
+ * Fires whenever the layout shifts — outputs added, removed, or
+ * repositioned. The one place screen geometry is computed.
+ */
+static void layout_change_handler(struct wl_listener *unused, void *arg)
+{
+        struct screen *s;
+
+        (void)unused;
+        (void)arg;
+
+        wl_list_for_each(s, &screens, link) {
+                wlr_output_layout_get_box(output_layout, s->output, &s->area);
+
+                s->warea = s->area;
+
+                if (s->showbar) {
+                        s->warea.y += s->bh;
+                        s->warea.height -= s->bh;
+                }
+
+                arrange(s);
+        }
+}
+
+static void frame_handler(struct wl_listener *listener, void *arg)
+{
+        struct screen *s = wl_container_of(listener, s, frame);
+        struct timespec now;
+
+        (void)arg;
+
+        wlr_scene_output_commit(s->scene_output, 0);
+
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        wlr_scene_output_send_frame_done(s->scene_output, &now);
+}
+
+static void request_state_handler(struct wl_listener *listener, void *arg)
+{
+        struct wlr_output_event_request_state *event = arg;
+
+        (void)listener;
+
+        wlr_output_commit_state(event->output, event->state);
+}
+
+static void focus(struct client *);
+
+static void output_destroy_handler(struct wl_listener *listener, void *arg)
+{
+        struct screen *s = wl_container_of(listener, s, destroy);
+        struct screen *survivor = 0;
+        struct client *c;
+
+        (void)arg;
+
+        screen_memory_save(s);
+
+        wl_list_remove(&s->frame.link);
+        wl_list_remove(&s->request_state.link);
+        wl_list_remove(&s->destroy.link);
+        wl_list_remove(&s->link);
+
+        /*
+         * The layout output and the scene-output are addons on the
+         * wlr_output; they tear themselves down with it. Only our
+         * pointers need dropping.
+         */
+        s->output->data = 0;
+
+        if (!wl_list_empty(&screens))
+                survivor = wl_container_of(screens.next, survivor, link);
+
+        /* clients keep their tags; with no survivor they orphan */
+        wl_list_for_each(c, &clients, link)
+                if (c->screen == s)
+                        c->screen = survivor;
+
+        if (current_screen == s)
+                current_screen = survivor;
+
+        free(s);
+
+        arrange(survivor);
+        focus(current_client());
+}
+
 static void new_output_handler(struct wl_listener *unused, void *arg)
 {
         struct wlr_output *out = arg;
+        struct wlr_output_layout_output *l_output;
         struct wlr_output_state state;
+        struct screen_memory *m;
+        struct screen *s;
+        struct client *c;
 
         (void)unused;
 
         wlr_output_init_render(out, allocator, renderer);
+
+        s = calloc(1, sizeof *s);
+        if (0 == s)
+                die("calloc failed");
+
+        s->output = out;
+        out->data = s;
+
+        /* seed from the memory table — this output was here before —
+         * or from config */
+        m = screen_memory_find(out->name);
+
+        s->tags = m ? m->tags : 1;
+        s->master_ratio = m ? m->master_ratio : master_ratio;
+        s->showbar = m ? m->showbar : showbar;
+        s->bh = bar_height;
 
         wlr_output_state_init(&state);
         wlr_output_state_set_enabled(&state, 1);
@@ -58,11 +439,379 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
         wlr_output_commit_state(out, &state);
         wlr_output_state_finish(&state);
 
-        wlr_output_layout_add_auto(output_layout, out);
+        LISTEN(&out->events.frame, &s->frame, frame_handler);
+        LISTEN(&out->events.request_state, &s->request_state,
+               request_state_handler);
+        LISTEN(&out->events.destroy, &s->destroy, output_destroy_handler);
 
-        wlr_log(WLR_INFO, "output %s: %dx%d",
+        wl_list_insert(&screens, &s->link);
+
+        s->scene_output = wlr_scene_output_create(scene, out);
+        l_output = wlr_output_layout_add_auto(output_layout, out);
+        wlr_scene_output_layout_add_output(scene_layout, l_output,
+                                           s->scene_output);
+
+        if (0 == current_screen)
+                current_screen = s;
+
+        /* re-adopt clients orphaned by an earlier output death */
+        wl_list_for_each(c, &clients, link)
+                if (0 == c->screen)
+                        c->screen = s;
+
+        wlr_log(WLR_INFO, "screen %s: %dx%d",
                 out->name, out->width, out->height);
 }
+
+/**********************************************************************/
+/* Clients                                                            */
+
+/*
+ * focus(NULL) is legal and meaningful: no focusable client, seat focus
+ * cleared, current_screen keeps its meaning.
+ */
+static void focus(struct client *c)
+{
+        struct wlr_surface *old = seat->keyboard_state.focused_surface;
+        struct wlr_keyboard *kb;
+
+        if (c && c->toplevel->base->surface == old)
+                return;
+
+        if (c) {
+                wl_list_remove(&c->focus_link);
+                wl_list_insert(&fstack, &c->focus_link);
+
+                /* unconditional: kills classic's abutting-boundary bug */
+                current_screen = c->screen;
+
+                state_of(c)->urgent = 0;
+                set_border_color(c, color_border_select);
+                wlr_scene_node_raise_to_top(&c->scene->node);
+        }
+
+        if (old) {
+                struct wlr_xdg_toplevel *t =
+                        wlr_xdg_toplevel_try_from_wlr_surface(old);
+
+                if (t) {
+                        struct client *o = t->base->data;
+
+                        if (o)
+                                set_border_color(o, color_border_normal);
+
+                        wlr_xdg_toplevel_set_activated(t, 0);
+                }
+        }
+
+        if (0 == c) {
+                wlr_seat_keyboard_notify_clear_focus(seat);
+                return;
+        }
+
+        wlr_xdg_toplevel_set_activated(c->toplevel, 1);
+
+        kb = wlr_seat_get_keyboard(seat);
+        if (kb)
+                wlr_seat_keyboard_notify_enter(seat,
+                                               c->toplevel->base->surface,
+                                               kb->keycodes,
+                                               kb->num_keycodes,
+                                               &kb->modifiers);
+        else
+                wlr_seat_keyboard_notify_enter(seat,
+                                               c->toplevel->base->surface,
+                                               0, 0, 0);
+}
+
+static void resize(struct client *c, struct wlr_box r)
+{
+        const int bw = border_width;
+
+        state_of(c)->r = r;
+
+        wlr_scene_node_set_position(&c->scene->node, r.x, r.y);
+        wlr_scene_node_set_position(&c->scene_surface->node, bw, bw);
+
+        wlr_scene_rect_set_size(c->border[0], r.width, bw);
+        wlr_scene_rect_set_size(c->border[1], r.width, bw);
+        wlr_scene_rect_set_size(c->border[2], bw, r.height - 2 * bw);
+        wlr_scene_rect_set_size(c->border[3], bw, r.height - 2 * bw);
+
+        wlr_scene_node_set_position(&c->border[1]->node, 0, r.height - bw);
+        wlr_scene_node_set_position(&c->border[2]->node, 0, bw);
+        wlr_scene_node_set_position(&c->border[3]->node, r.width - bw, bw);
+
+        wlr_xdg_toplevel_set_size(c->toplevel,
+                                  r.width - 2 * bw, r.height - 2 * bw);
+}
+
+static void commit_handler(struct wl_listener *listener, void *arg)
+{
+        struct client *c = wl_container_of(listener, c, commit);
+
+        (void)arg;
+
+        /*
+         * The initial commit must be answered with a configure before
+         * the client can map; 0x0 lets it pick a size, tiling overrides
+         * at map anyway.
+         */
+        if (c->toplevel->base->initial_commit)
+                wlr_xdg_toplevel_set_size(c->toplevel, 0, 0);
+}
+
+static void map_handler(struct wl_listener *listener, void *arg)
+{
+        struct client *c = wl_container_of(listener, c, map);
+        struct state *state = state_of(c);
+        size_t i;
+
+        (void)arg;
+
+        c->scene = wlr_scene_tree_create(&scene->tree);
+        c->scene_surface =
+                wlr_scene_xdg_surface_create(c->scene, c->toplevel->base);
+
+        /* popups look their parent's scene tree up here */
+        c->toplevel->base->surface->data = c->scene_surface;
+
+        for (i = 0; i < 4; ++i)
+                c->border[i] = wlr_scene_rect_create(c->scene, 0, 0,
+                                                     color_border_normal);
+
+        wl_list_insert(&clients, &c->link);
+        wl_list_insert(&fstack, &c->focus_link);
+
+        c->screen = current_screen;     /* no outputs: a legal orphan */
+
+        if (c->toplevel->parent) {
+                struct client *p = c->toplevel->parent->base->data;
+
+                /* transient: borrow the parent's tags, float */
+                state->tags = p ? state_of(p)->tags : 1;
+                state->floating = 1;
+        } else {
+                state->tags = c->screen ? c->screen->tags : 1;
+                state->floating = client_is_fixed(c);
+        }
+
+        /* floating clients keep their own size, centered */
+        if (state->floating && c->screen) {
+                struct wlr_box g = c->toplevel->base->geometry;
+                struct wlr_box r = {
+                        .width = g.width + 2 * border_width,
+                        .height = g.height + 2 * border_width
+                };
+
+                r.x = c->screen->warea.x +
+                        (c->screen->warea.width - r.width) / 2;
+                r.y = c->screen->warea.y +
+                        (c->screen->warea.height - r.height) / 2;
+
+                resize(c, r);
+        }
+
+        arrange(c->screen);
+        focus(c);
+}
+
+static void unmap_handler(struct wl_listener *listener, void *arg)
+{
+        struct client *c = wl_container_of(listener, c, unmap);
+        struct screen *s = c->screen;
+
+        (void)arg;
+
+        wl_list_remove(&c->link);
+        wl_list_remove(&c->focus_link);
+
+        c->toplevel->base->surface->data = 0;
+
+        wlr_scene_node_destroy(&c->scene->node);
+        c->scene = 0;
+        c->scene_surface = 0;
+        memset(c->border, 0, sizeof c->border);
+
+        arrange(s);
+        focus(current_client());
+}
+
+static void toplevel_destroy_handler(struct wl_listener *listener, void *arg)
+{
+        struct client *c = wl_container_of(listener, c, destroy);
+
+        (void)arg;
+
+        wl_list_remove(&c->commit.link);
+        wl_list_remove(&c->map.link);
+        wl_list_remove(&c->unmap.link);
+        wl_list_remove(&c->destroy.link);
+
+        free(c);
+}
+
+static void new_toplevel_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_xdg_toplevel *toplevel = arg;
+        struct client *c;
+
+        (void)unused;
+
+        c = calloc(1, sizeof *c);
+        if (0 == c)
+                die("calloc failed");
+
+        c->toplevel = toplevel;
+        toplevel->base->data = c;
+
+        LISTEN(&toplevel->base->surface->events.commit, &c->commit,
+               commit_handler);
+        LISTEN(&toplevel->base->surface->events.map, &c->map, map_handler);
+        LISTEN(&toplevel->base->surface->events.unmap, &c->unmap,
+               unmap_handler);
+        LISTEN(&toplevel->events.destroy, &c->destroy,
+               toplevel_destroy_handler);
+}
+
+static void popup_commit_handler(struct wl_listener *listener, void *arg)
+{
+        struct popup *p = wl_container_of(listener, p, commit);
+
+        (void)arg;
+
+        if (p->popup->base->initial_commit)
+                wlr_xdg_surface_schedule_configure(p->popup->base);
+}
+
+static void popup_destroy_handler(struct wl_listener *listener, void *arg)
+{
+        struct popup *p = wl_container_of(listener, p, destroy);
+
+        (void)arg;
+
+        wl_list_remove(&p->commit.link);
+        wl_list_remove(&p->destroy.link);
+
+        free(p);
+}
+
+static void new_popup_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_xdg_popup *popup = arg;
+        struct wlr_scene_tree *parent;
+        struct popup *p;
+
+        (void)unused;
+
+        /* a popup for an unmapped parent has nowhere to render */
+        parent = popup->parent ? popup->parent->data : 0;
+        if (0 == parent) {
+                wlr_xdg_popup_destroy(popup);
+                return;
+        }
+
+        p = calloc(1, sizeof *p);
+        if (0 == p)
+                die("calloc failed");
+
+        p->popup = popup;
+
+        /* nested popups hook into this one the same way */
+        popup->base->surface->data =
+                wlr_scene_xdg_surface_create(parent, popup->base);
+
+        LISTEN(&popup->base->surface->events.commit, &p->commit,
+               popup_commit_handler);
+        LISTEN(&popup->events.destroy, &p->destroy, popup_destroy_handler);
+}
+
+/**********************************************************************/
+/* Input                                                              */
+
+static void kb_key_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_keyboard_key_event *event = arg;
+
+        (void)unused;
+
+        /* no compositor bindings yet: everything goes to the client */
+        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+        wlr_seat_keyboard_notify_key(seat, event->time_msec,
+                                     event->keycode, event->state);
+}
+
+static void kb_modifiers_handler(struct wl_listener *unused, void *arg)
+{
+        (void)unused;
+        (void)arg;
+
+        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+        wlr_seat_keyboard_notify_modifiers(seat,
+                                           &kb_group->keyboard.modifiers);
+}
+
+static void new_input_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_input_device *device = arg;
+
+        (void)unused;
+
+        /*
+         * Every keyboard joins the group and inherits keymap and repeat
+         * settings the moment it appears — the whole xset-reverts bug
+         * class from X11 dissolves here.
+         */
+        if (WLR_INPUT_DEVICE_KEYBOARD == device->type) {
+                struct wlr_keyboard *kb =
+                        wlr_keyboard_from_input_device(device);
+
+                wlr_keyboard_set_keymap(kb, kb_group->keyboard.keymap);
+                wlr_keyboard_group_add_keyboard(kb_group, kb);
+        }
+
+        wlr_seat_set_capabilities(seat, WL_SEAT_CAPABILITY_KEYBOARD);
+}
+
+static void keyboard_init(void)
+{
+        struct xkb_context *context;
+        struct xkb_keymap *keymap;
+
+        context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+        if (0 == context)
+                die("xkb_context_new failed");
+
+        /* NULL rules: layout comes from the XKB_DEFAULT_* environment */
+        keymap = xkb_keymap_new_from_names(context, 0,
+                                           XKB_KEYMAP_COMPILE_NO_FLAGS);
+        if (0 == keymap)
+                die("xkb_keymap_new_from_names failed");
+
+        kb_group = wlr_keyboard_group_create();
+
+        wlr_keyboard_set_keymap(&kb_group->keyboard, keymap);
+        wlr_keyboard_set_repeat_info(&kb_group->keyboard,
+                                     repeat_rate, repeat_delay);
+
+        xkb_keymap_unref(keymap);
+        xkb_context_unref(context);
+
+        LISTEN(&kb_group->keyboard.events.key, &kb_key_listener,
+               kb_key_handler);
+        LISTEN(&kb_group->keyboard.events.modifiers, &kb_modifiers_listener,
+               kb_modifiers_handler);
+
+        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+
+        /*
+         * The group keyboard exists whether or not hardware ever shows
+         * up, so the capability is unconditional — headless included.
+         */
+        wlr_seat_set_capabilities(seat, WL_SEAT_CAPABILITY_KEYBOARD);
+}
+
+/**********************************************************************/
 
 static int terminate_handler(int signo, void *unused)
 {
@@ -93,6 +842,9 @@ static void init(void)
         if (0 == renderer)
                 die("wlr_renderer_autocreate failed");
 
+        /* without this, no buffer-bearing client can attach */
+        wlr_renderer_init_wl_shm(renderer, display);
+
         allocator = wlr_allocator_autocreate(backend, renderer);
         if (0 == allocator)
                 die("wlr_allocator_autocreate failed");
@@ -101,10 +853,33 @@ static void init(void)
         wlr_subcompositor_create(display);
         wlr_data_device_manager_create(display);
 
-        output_layout = wlr_output_layout_create(display);
+        scene = wlr_scene_create();
 
-        new_output_listener.notify = new_output_handler;
-        wl_signal_add(&backend->events.new_output, &new_output_listener);
+        output_layout = wlr_output_layout_create(display);
+        scene_layout = wlr_scene_attach_output_layout(scene, output_layout);
+
+        wl_list_init(&screens);
+        wl_list_init(&clients);
+        wl_list_init(&fstack);
+
+        LISTEN(&output_layout->events.change, &layout_change_listener,
+               layout_change_handler);
+        LISTEN(&backend->events.new_output, &new_output_listener,
+               new_output_handler);
+
+        xdg_shell = wlr_xdg_shell_create(display, 6);
+
+        LISTEN(&xdg_shell->events.new_toplevel, &new_toplevel_listener,
+               new_toplevel_handler);
+        LISTEN(&xdg_shell->events.new_popup, &new_popup_listener,
+               new_popup_handler);
+
+        seat = wlr_seat_create(display, "seat0");
+
+        LISTEN(&backend->events.new_input, &new_input_listener,
+               new_input_handler);
+
+        keyboard_init();
 }
 
 static void run(void)
@@ -132,9 +907,19 @@ static void fini(void)
          * finishes; unhook ours first.
          */
         wl_list_remove(&new_output_listener.link);
+        wl_list_remove(&layout_change_listener.link);
+        wl_list_remove(&new_toplevel_listener.link);
+        wl_list_remove(&new_popup_listener.link);
+        wl_list_remove(&new_input_listener.link);
+        wl_list_remove(&kb_key_listener.link);
+        wl_list_remove(&kb_modifiers_listener.link);
 
+        wlr_keyboard_group_destroy(kb_group);
         wlr_backend_destroy(backend);
         wl_display_destroy(display);
+
+        /* the scene is not owned by the display; last out */
+        wlr_scene_node_destroy(&scene->tree.node);
 }
 
 int main(void)

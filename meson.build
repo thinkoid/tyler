@@ -9,6 +9,7 @@ add_project_arguments('-DWLR_USE_UNSTABLE',
 
 wlroots = dependency('wlroots-0.19')
 wayland_server = dependency('wayland-server')
+xkbcommon = dependency('xkbcommon')
 
 # wlroots requires the compositor to rig up the wayland-scanner protocol
 # generation itself (see dwl's Makefile for the reference recipe).
@@ -25,5 +26,5 @@ xdg_shell_h = custom_target(
         command : [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'])
 
 executable('tyler', ['tyler.c', xdg_shell_h],
-           dependencies : [wlroots, wayland_server],
+           dependencies : [wlroots, wayland_server, xkbcommon],
            install : true)
