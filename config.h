@@ -9,23 +9,38 @@
  * tyler-classic's palette.
  */
 
-/* #444444 / #93a660 / #EEEEEE */
-static const float color_border_normal[] = { 0.267f, 0.267f, 0.267f, 1.0f };
-static const float color_border_select[] = { 0.576f, 0.651f, 0.376f, 1.0f };
-static const float color_border_urgent[] = { 0.933f, 0.933f, 0.933f, 1.0f };
+/* classic's palette: #444444 #222222 #BBBBBB #93a660 #4f5b3f #EEEEEE */
+/* clang-format off */
+static const float colors[][4] = {
+        [COLOR_NORMAL_BORDER] = { 0.267f, 0.267f, 0.267f, 1.0f },
+        [COLOR_NORMAL_BG]     = { 0.133f, 0.133f, 0.133f, 1.0f },
+        [COLOR_NORMAL_FG]     = { 0.733f, 0.733f, 0.733f, 1.0f },
+        [COLOR_SELECT_BORDER] = { 0.576f, 0.651f, 0.376f, 1.0f },
+        [COLOR_SELECT_BG]     = { 0.310f, 0.357f, 0.247f, 1.0f },
+        [COLOR_SELECT_FG]     = { 0.933f, 0.933f, 0.933f, 1.0f },
+};
+/* clang-format on */
 
 static const int border_width = 1;
 static const int margin       = 2;
 
 static const float master_ratio = 0.5f;
 
+static const int showbar = 1;
+
 /*
- * The bar itself lands with fcft; the work-area strip is reserved now so
- * tiling geometry doesn't shift when it does. Height is a placeholder
- * until it derives from the font.
+ * One string feeds the bar (and later the menu). The nerd-patched
+ * Iosevka, as in classic; the bar height derives from it.
  */
-static const int showbar    = 1;
-static const int bar_height = 24;
+static const char *fontname = "IosevkaTerm Nerd Font:style=Light:size=12";
+
+/*
+ * The status feeder: spawned by the compositor, one line on stdout per
+ * bar update. Replace with tyler-status when it grows a stdout mode.
+ */
+static const char *const statuscmd[] = {
+        "sh", "-c", "while date '+%a %d %b %H:%M'; do sleep 60; done", 0
+};
 
 /*
  * Keyboard autorepeat, applied to every keyboard the moment it appears
@@ -69,5 +84,10 @@ static const struct key keys[] = {
         TAGKEYS(XKB_KEY_7, XKB_KEY_ampersand,   7),
         TAGKEYS(XKB_KEY_8, XKB_KEY_asterisk,    8),
         TAGKEYS(XKB_KEY_9, XKB_KEY_parenleft,   9),
+};
+
+static const struct button buttons[] = {
+        { MODKEY, BTN_LEFT,  mouse_move   },
+        { MODKEY, BTN_RIGHT, mouse_resize },
 };
 /* clang-format on */

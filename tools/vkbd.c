@@ -5,6 +5,10 @@
  * virtual-keyboard-unstable-v1: each argument is a chord like
  * "alt+shift+j" — modifiers pressed, key tapped, modifiers released
  * in reverse, then a settle delay so the compositor can act.
+ *
+ * For choreography with vptr: "+alt" presses without releasing,
+ * "-alt" releases, "hold N" sleeps N ms in between — so a drag can
+ * run under a held modifier.
  */
 
 #define _GNU_SOURCE
@@ -190,6 +194,20 @@ int main(int argc, char **argv)
                 uint32_t codes[8];
                 int j, n = 0;
                 char *tok;
+
+                if (0 == strcmp(argv[i], "hold") && i + 1 < argc) {
+                        usleep(1000UL * strtoul(argv[++i], 0, 10));
+                        continue;
+                }
+
+                if ('+' == argv[i][0] || '-' == argv[i][0]) {
+                        send_key(vk, &t, code_of(argv[i] + 1),
+                                 '+' == argv[i][0]);
+
+                        wl_display_roundtrip(display);
+                        usleep(100 * 1000);
+                        continue;
+                }
 
                 snprintf(chord, sizeof chord, "%s", argv[i]);
 
