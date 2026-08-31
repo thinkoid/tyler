@@ -1,10 +1,13 @@
 /* -*- mode: c; -*- */
 
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <wayland-server-core.h>
 
@@ -23,6 +26,7 @@
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
@@ -30,8 +34,6 @@
  * Unused as yet; proves the wayland-scanner rigging end to end.
  */
 #include <xdg-shell-protocol.h>
-
-#include "config.h"
 
 #define LISTEN(src, listener, handler)             \
         do {                                       \
@@ -112,6 +114,32 @@ struct popup {
         struct wl_listener destroy;
 };
 
+/*
+ * One group per source of keyboards: the main one collects every
+ * physical device; each virtual keyboard (the vkbd oracle, on-screen
+ * boards) gets a group of its own with the same keymap and handlers.
+ */
+struct keyboard {
+        struct wlr_keyboard_group *group;
+
+        /* a held binding repeats compositor-side; any key re-arms */
+        const xkb_keysym_t *repeat_syms;
+        int repeat_nsyms;
+        uint32_t repeat_mods;
+        struct wl_event_source *repeat_timer;
+
+        struct wl_listener key;
+        struct wl_listener modifiers;
+        struct wl_listener destroy;     /* virtual keyboards only */
+};
+
+struct key {
+        uint32_t mod;
+        xkb_keysym_t keysym;
+        void (*func)(unsigned);
+        unsigned arg;
+};
+
 static struct wl_display *display;
 static struct wl_event_loop *event_loop;
 
@@ -127,7 +155,9 @@ static struct wlr_output_layout *output_layout;
 static struct wlr_xdg_shell *xdg_shell;
 
 static struct wlr_seat *seat;
-static struct wlr_keyboard_group *kb_group;
+static struct keyboard *kb_main;
+static struct xkb_keymap *keymap;
+static struct wlr_virtual_keyboard_manager_v1 *vkbd_mgr;
 
 static struct wl_list screens;
 static struct wl_list clients;
@@ -142,8 +172,25 @@ static struct wl_listener layout_change_listener;
 static struct wl_listener new_toplevel_listener;
 static struct wl_listener new_popup_listener;
 static struct wl_listener new_input_listener;
-static struct wl_listener kb_key_listener;
-static struct wl_listener kb_modifiers_listener;
+static struct wl_listener new_vkbd_listener;
+
+/* the key table in config.h points at these */
+static void zoom(unsigned);
+static void spawn_terminal(unsigned);
+static void toggle_bar(unsigned);
+static void focus_next(unsigned);
+static void focus_prev(unsigned);
+static void zap(unsigned);
+static void focus_prev_screen(unsigned);
+static void focus_next_screen(unsigned);
+static void move_prev_screen(unsigned);
+static void move_next_screen(unsigned);
+static void tile_current(unsigned);
+static void view_tag(unsigned);
+static void change_tag(unsigned);
+static void quit(unsigned);
+
+#include "config.h"
 
 static void die(const char *s)
 {
@@ -312,9 +359,21 @@ static void arrange(struct screen *s)
         tile(s);
 }
 
+static void screen_update_area(struct screen *s)
+{
+        wlr_output_layout_get_box(output_layout, s->output, &s->area);
+
+        s->warea = s->area;
+
+        if (s->showbar) {
+                s->warea.y += s->bh;
+                s->warea.height -= s->bh;
+        }
+}
+
 /*
  * Fires whenever the layout shifts — outputs added, removed, or
- * repositioned. The one place screen geometry is computed.
+ * repositioned. The one place screen geometry is recomputed wholesale.
  */
 static void layout_change_handler(struct wl_listener *unused, void *arg)
 {
@@ -324,17 +383,36 @@ static void layout_change_handler(struct wl_listener *unused, void *arg)
         (void)arg;
 
         wl_list_for_each(s, &screens, link) {
-                wlr_output_layout_get_box(output_layout, s->output, &s->area);
-
-                s->warea = s->area;
-
-                if (s->showbar) {
-                        s->warea.y += s->bh;
-                        s->warea.height -= s->bh;
-                }
-
+                screen_update_area(s);
                 arrange(s);
         }
+}
+
+/* neighbors in layout order, wrapping; NULL when s is alone */
+static struct screen *screen_after(struct screen *s)
+{
+        struct wl_list *l = s->link.next;
+        struct screen *n;
+
+        if (l == &screens)
+                l = screens.next;
+
+        n = wl_container_of(l, n, link);
+
+        return n == s ? 0 : n;
+}
+
+static struct screen *screen_before(struct screen *s)
+{
+        struct wl_list *l = s->link.prev;
+        struct screen *n;
+
+        if (l == &screens)
+                l = screens.prev;
+
+        n = wl_container_of(l, n, link);
+
+        return n == s ? 0 : n;
 }
 
 static void frame_handler(struct wl_listener *listener, void *arg)
@@ -727,28 +805,408 @@ static void new_popup_handler(struct wl_listener *unused, void *arg)
 }
 
 /**********************************************************************/
-/* Input                                                              */
+/* Actions                                                            */
 
-static void kb_key_handler(struct wl_listener *unused, void *arg)
+static void spawn(const char *const *args)
 {
-        struct wlr_keyboard_key_event *event = arg;
+        if (0 == fork()) {
+                setsid();
+                execvp(args[0], (char *const *)args);
+
+                fprintf(stderr, "tyler: execvp %s failed\n", args[0]);
+                exit(1);
+        }
+}
+
+static void spawn_terminal(unsigned unused)
+{
+        (void)unused;
+
+        spawn(termcmd);
+}
+
+static void quit(unsigned unused)
+{
+        (void)unused;
+
+        wl_display_terminate(display);
+}
+
+static void zap(unsigned unused)
+{
+        struct client *c = current_client();
 
         (void)unused;
 
-        /* no compositor bindings yet: everything goes to the client */
-        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+        if (c)
+                wlr_xdg_toplevel_send_close(c->toplevel);
+}
+
+static void toggle_bar(unsigned unused)
+{
+        struct screen *s = current_screen;
+
+        (void)unused;
+
+        if (0 == s)
+                return;
+
+        s->showbar = !s->showbar;
+
+        screen_update_area(s);
+        arrange(s);
+}
+
+static void zoom(unsigned unused)
+{
+        struct client *cur = current_client(), *c = 0, *it;
+        struct wl_list *l;
+
+        (void)unused;
+
+        if (0 == cur || !tiled_on(cur, current_screen))
+                return;
+
+        /* the first tiled client in list order is the master */
+        wl_list_for_each(it, &clients, link)
+                if (tiled_on(it, current_screen)) {
+                        c = it;
+                        break;
+                }
+
+        if (c != cur) {
+                c = cur;
+        } else {
+                /* the master zooms the next tile up instead */
+                c = 0;
+
+                for (l = cur->link.next; l != &clients; l = l->next) {
+                        it = wl_container_of(l, it, link);
+
+                        if (tiled_on(it, current_screen)) {
+                                c = it;
+                                break;
+                        }
+                }
+
+                if (0 == c)
+                        return;
+        }
+
+        wl_list_remove(&c->link);
+        wl_list_insert(&clients, &c->link);
+
+        arrange(current_screen);
+        focus(c);
+}
+
+/*
+ * The walk rings over the client list in tile order, skipping the
+ * sentinel when it wraps; with nothing focused it starts anywhere.
+ */
+static void focus_next(unsigned unused)
+{
+        struct client *cur = current_client(), *c = 0, *it;
+        struct wl_list *l, *start = cur ? &cur->link : &clients;
+
+        (void)unused;
+
+        for (l = start->next; l != start; l = l->next) {
+                if (l == &clients)
+                        continue;
+
+                it = wl_container_of(l, it, link);
+
+                if (visible_on(it, current_screen)) {
+                        c = it;
+                        break;
+                }
+        }
+
+        if (c && c != cur)
+                focus(c);
+}
+
+static void focus_prev(unsigned unused)
+{
+        struct client *cur = current_client(), *c = 0, *it;
+        struct wl_list *l, *start = cur ? &cur->link : &clients;
+
+        (void)unused;
+
+        for (l = start->prev; l != start; l = l->prev) {
+                if (l == &clients)
+                        continue;
+
+                it = wl_container_of(l, it, link);
+
+                if (visible_on(it, current_screen)) {
+                        c = it;
+                        break;
+                }
+        }
+
+        if (c && c != cur)
+                focus(c);
+}
+
+static void view_tag(unsigned n)
+{
+        unsigned mask = 1U << (n - 1);
+
+        if (0 == current_screen || mask == current_screen->tags)
+                return;
+
+        current_screen->tags = mask;
+
+        arrange(current_screen);
+        focus(current_client());
+}
+
+static void change_tag(unsigned n)
+{
+        unsigned mask = 1U << (n - 1);
+        struct client *c = current_client();
+
+        if (0 == c || mask == state_of(c)->tags)
+                return;
+
+        state_of(c)->tags = mask;
+
+        arrange(current_screen);
+        focus(current_client());
+}
+
+static void tile_current(unsigned unused)
+{
+        struct client *c = current_client();
+        struct state *state;
+
+        (void)unused;
+
+        if (0 == c)
+                return;
+
+        state = state_of(c);
+
+        if (state->floating || state->fullscreen) {
+                state->floating = 0;
+                state->fullscreen = 0;
+
+                arrange(current_screen);
+        }
+}
+
+static void focus_other_screen(struct screen *s)
+{
+        if (0 == s)
+                return;
+
+        current_screen = s;
+        focus(current_client());
+}
+
+static void focus_next_screen(unsigned unused)
+{
+        (void)unused;
+
+        if (current_screen)
+                focus_other_screen(screen_after(current_screen));
+}
+
+static void focus_prev_screen(unsigned unused)
+{
+        (void)unused;
+
+        if (current_screen)
+                focus_other_screen(screen_before(current_screen));
+}
+
+/*
+ * As in classic: the client keeps its tags, focus stays on this
+ * screen, and the mover sits atop the target's focus stack — it
+ * becomes current the moment you look over there.
+ */
+static void move_other_screen(struct screen *s)
+{
+        struct client *c = current_client();
+        struct screen *old = current_screen;
+
+        if (0 == c || 0 == s)
+                return;
+
+        c->screen = s;
+
+        arrange(old);
+        arrange(s);
+        focus(current_client());
+}
+
+static void move_next_screen(unsigned unused)
+{
+        (void)unused;
+
+        if (current_screen)
+                move_other_screen(screen_after(current_screen));
+}
+
+static void move_prev_screen(unsigned unused)
+{
+        (void)unused;
+
+        if (current_screen)
+                move_other_screen(screen_before(current_screen));
+}
+
+/**********************************************************************/
+/* Input                                                              */
+
+#define CLEANMASK(mask) ((mask) & ~(WLR_MODIFIER_CAPS | WLR_MODIFIER_MOD2))
+
+static int keybinding(uint32_t mods, xkb_keysym_t sym)
+{
+        const struct key *k;
+
+        for (k = keys; k < keys + sizeof keys / sizeof *keys; ++k)
+                if (CLEANMASK(k->mod) == CLEANMASK(mods) &&
+                    xkb_keysym_to_lower(k->keysym) ==
+                            xkb_keysym_to_lower(sym)) {
+                        k->func(k->arg);
+                        return 1;
+                }
+
+        return 0;
+}
+
+static void kb_key_handler(struct wl_listener *listener, void *arg)
+{
+        struct keyboard *kb = wl_container_of(listener, kb, key);
+        struct wlr_keyboard_key_event *event = arg;
+
+        /* libinput keycode -> xkb */
+        uint32_t keycode = event->keycode + 8;
+        uint32_t mods = wlr_keyboard_get_modifiers(&kb->group->keyboard);
+
+        const xkb_keysym_t *syms;
+        int i, handled = 0;
+        int nsyms = xkb_state_key_get_syms(kb->group->keyboard.xkb_state,
+                                           keycode, &syms);
+
+        if (WL_KEYBOARD_KEY_STATE_PRESSED == event->state)
+                for (i = 0; i < nsyms; ++i)
+                        handled |= keybinding(mods, syms[i]);
+
+        /*
+         * Held bindings repeat compositor-side — X gave classic this
+         * for free. Any further key event re-arms or disarms.
+         */
+        if (handled && 0 < kb->group->keyboard.repeat_info.delay) {
+                kb->repeat_mods = mods;
+                kb->repeat_syms = syms;
+                kb->repeat_nsyms = nsyms;
+
+                wl_event_source_timer_update(
+                        kb->repeat_timer,
+                        kb->group->keyboard.repeat_info.delay);
+        } else {
+                kb->repeat_nsyms = 0;
+                wl_event_source_timer_update(kb->repeat_timer, 0);
+        }
+
+        if (handled)
+                return;
+
+        wlr_seat_set_keyboard(seat, &kb->group->keyboard);
         wlr_seat_keyboard_notify_key(seat, event->time_msec,
                                      event->keycode, event->state);
 }
 
-static void kb_modifiers_handler(struct wl_listener *unused, void *arg)
+static void kb_modifiers_handler(struct wl_listener *listener, void *arg)
 {
-        (void)unused;
+        struct keyboard *kb = wl_container_of(listener, kb, modifiers);
+
         (void)arg;
 
-        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+        wlr_seat_set_keyboard(seat, &kb->group->keyboard);
         wlr_seat_keyboard_notify_modifiers(seat,
-                                           &kb_group->keyboard.modifiers);
+                                           &kb->group->keyboard.modifiers);
+}
+
+static int kb_repeat_handler(void *arg)
+{
+        struct keyboard *kb = arg;
+        int i, rate = kb->group->keyboard.repeat_info.rate;
+
+        if (0 == kb->repeat_nsyms || 0 >= rate)
+                return 0;
+
+        wl_event_source_timer_update(kb->repeat_timer, 1000 / rate);
+
+        for (i = 0; i < kb->repeat_nsyms; ++i)
+                keybinding(kb->repeat_mods, kb->repeat_syms[i]);
+
+        return 0;
+}
+
+static struct keyboard *keyboard_create(void)
+{
+        struct keyboard *kb = calloc(1, sizeof *kb);
+
+        if (0 == kb)
+                die("calloc failed");
+
+        kb->group = wlr_keyboard_group_create();
+
+        wlr_keyboard_set_keymap(&kb->group->keyboard, keymap);
+        wlr_keyboard_set_repeat_info(&kb->group->keyboard,
+                                     repeat_rate, repeat_delay);
+
+        LISTEN(&kb->group->keyboard.events.key, &kb->key, kb_key_handler);
+        LISTEN(&kb->group->keyboard.events.modifiers, &kb->modifiers,
+               kb_modifiers_handler);
+
+        wl_list_init(&kb->destroy.link);
+
+        kb->repeat_timer =
+                wl_event_loop_add_timer(event_loop, kb_repeat_handler, kb);
+
+        return kb;
+}
+
+static void keyboard_destroy(struct keyboard *kb)
+{
+        wl_list_remove(&kb->key.link);
+        wl_list_remove(&kb->modifiers.link);
+        wl_list_remove(&kb->destroy.link);
+
+        wl_event_source_remove(kb->repeat_timer);
+        wlr_keyboard_group_destroy(kb->group);
+
+        free(kb);
+}
+
+static void vkbd_destroy_handler(struct wl_listener *listener, void *arg)
+{
+        struct keyboard *kb = wl_container_of(listener, kb, destroy);
+
+        (void)arg;
+
+        keyboard_destroy(kb);
+}
+
+static void new_vkbd_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_virtual_keyboard_v1 *v = arg;
+        struct keyboard *kb = keyboard_create();
+
+        (void)unused;
+
+        LISTEN(&v->keyboard.base.events.destroy, &kb->destroy,
+               vkbd_destroy_handler);
+
+        /* our keymap, not the client's — bindings must stay coherent */
+        wlr_keyboard_set_keymap(&v->keyboard, keymap);
+        wlr_keyboard_group_add_keyboard(kb->group, &v->keyboard);
 }
 
 static void new_input_handler(struct wl_listener *unused, void *arg)
@@ -766,8 +1224,8 @@ static void new_input_handler(struct wl_listener *unused, void *arg)
                 struct wlr_keyboard *kb =
                         wlr_keyboard_from_input_device(device);
 
-                wlr_keyboard_set_keymap(kb, kb_group->keyboard.keymap);
-                wlr_keyboard_group_add_keyboard(kb_group, kb);
+                wlr_keyboard_set_keymap(kb, keymap);
+                wlr_keyboard_group_add_keyboard(kb_main->group, kb);
         }
 
         wlr_seat_set_capabilities(seat, WL_SEAT_CAPABILITY_KEYBOARD);
@@ -776,7 +1234,6 @@ static void new_input_handler(struct wl_listener *unused, void *arg)
 static void keyboard_init(void)
 {
         struct xkb_context *context;
-        struct xkb_keymap *keymap;
 
         context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
         if (0 == context)
@@ -788,21 +1245,11 @@ static void keyboard_init(void)
         if (0 == keymap)
                 die("xkb_keymap_new_from_names failed");
 
-        kb_group = wlr_keyboard_group_create();
-
-        wlr_keyboard_set_keymap(&kb_group->keyboard, keymap);
-        wlr_keyboard_set_repeat_info(&kb_group->keyboard,
-                                     repeat_rate, repeat_delay);
-
-        xkb_keymap_unref(keymap);
         xkb_context_unref(context);
 
-        LISTEN(&kb_group->keyboard.events.key, &kb_key_listener,
-               kb_key_handler);
-        LISTEN(&kb_group->keyboard.events.modifiers, &kb_modifiers_listener,
-               kb_modifiers_handler);
+        kb_main = keyboard_create();
 
-        wlr_seat_set_keyboard(seat, &kb_group->keyboard);
+        wlr_seat_set_keyboard(seat, &kb_main->group->keyboard);
 
         /*
          * The group keyboard exists whether or not hardware ever shows
@@ -823,6 +1270,17 @@ static int terminate_handler(int signo, void *unused)
         return 0;
 }
 
+static int reap_handler(int signo, void *unused)
+{
+        (void)signo;
+        (void)unused;
+
+        while (0 < waitpid(-1, 0, WNOHANG))
+                ;
+
+        return 0;
+}
+
 static void init(void)
 {
         display = wl_display_create();
@@ -833,6 +1291,7 @@ static void init(void)
 
         wl_event_loop_add_signal(event_loop, SIGINT, terminate_handler, 0);
         wl_event_loop_add_signal(event_loop, SIGTERM, terminate_handler, 0);
+        wl_event_loop_add_signal(event_loop, SIGCHLD, reap_handler, 0);
 
         backend = wlr_backend_autocreate(event_loop, &session);
         if (0 == backend)
@@ -879,6 +1338,10 @@ static void init(void)
         LISTEN(&backend->events.new_input, &new_input_listener,
                new_input_handler);
 
+        vkbd_mgr = wlr_virtual_keyboard_manager_v1_create(display);
+        LISTEN(&vkbd_mgr->events.new_virtual_keyboard, &new_vkbd_listener,
+               new_vkbd_handler);
+
         keyboard_init();
 }
 
@@ -911,10 +1374,11 @@ static void fini(void)
         wl_list_remove(&new_toplevel_listener.link);
         wl_list_remove(&new_popup_listener.link);
         wl_list_remove(&new_input_listener.link);
-        wl_list_remove(&kb_key_listener.link);
-        wl_list_remove(&kb_modifiers_listener.link);
+        wl_list_remove(&new_vkbd_listener.link);
 
-        wlr_keyboard_group_destroy(kb_group);
+        keyboard_destroy(kb_main);
+        xkb_keymap_unref(keymap);
+
         wlr_backend_destroy(backend);
         wl_display_destroy(display);
 

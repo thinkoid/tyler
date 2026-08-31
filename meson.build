@@ -9,6 +9,7 @@ add_project_arguments('-DWLR_USE_UNSTABLE',
 
 wlroots = dependency('wlroots-0.19')
 wayland_server = dependency('wayland-server')
+wayland_client = dependency('wayland-client')
 xkbcommon = dependency('xkbcommon')
 
 # wlroots requires the compositor to rig up the wayland-scanner protocol
@@ -28,3 +29,24 @@ xdg_shell_h = custom_target(
 executable('tyler', ['tyler.c', xdg_shell_h],
            dependencies : [wlroots, wayland_server, xkbcommon],
            install : true)
+
+# vkbd: the keyboard oracle's key injector, never installed. The
+# virtual-keyboard XML is vendored (wlroots ships it, wayland-protocols
+# does not).
+vk_xml = 'protocol/virtual-keyboard-unstable-v1.xml'
+
+vk_client_h = custom_target(
+        'virtual-keyboard-client-header',
+        input : vk_xml,
+        output : 'virtual-keyboard-unstable-v1-client-protocol.h',
+        command : [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+
+vk_glue_c = custom_target(
+        'virtual-keyboard-glue',
+        input : vk_xml,
+        output : 'virtual-keyboard-unstable-v1-protocol.c',
+        command : [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+
+executable('vkbd', ['tools/vkbd.c', vk_client_h, vk_glue_c],
+           dependencies : [wayland_client, xkbcommon],
+           install : false)
