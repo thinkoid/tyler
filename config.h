@@ -36,11 +36,11 @@ static const char *fontname = "IosevkaTerm Nerd Font:style=Light:size=28";
 
 /*
  * The status feeder: spawned by the compositor, one line on stdout per
- * bar update. Replace with tyler-status when it grows a stdout mode.
+ * bar update. tyler-status -o is the stdout transport of classic's
+ * feeder (~/.local/bin, found via PATH); if it is missing the spawn
+ * fails quietly and the status field stays empty.
  */
-static const char *const statuscmd[] = {
-        "sh", "-c", "while date '+%a %d %b %H:%M'; do sleep 60; done", 0
-};
+static const char *const statuscmd[] = { "tyler-status", "-o", 0 };
 
 /*
  * Keyboard autorepeat, applied to every keyboard the moment it appears

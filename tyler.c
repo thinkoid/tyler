@@ -214,6 +214,9 @@ static struct wlr_scene_tree *layer_fs;
 static struct fcft_font *font;
 static char status[256];
 static struct wl_event_source *status_source;
+static pid_t status_pid;
+
+static struct wl_event_source *signal_sources[3];
 
 /* the menu draws in menu_screen's bar strip while active */
 static int menu_active;
@@ -452,6 +455,16 @@ static void fill_rect(pixman_image_t *dst, int x, int y, int w, int h,
                       const float rgba[4])
 {
         pixman_color_t c = pixman_color(rgba);
+
+        /*
+         * The rectangle's extents are unsigned 16-bit and the opaque
+         * SRC fill takes pixman's unclipped fast path: a negative
+         * width arrives as a ~64K raw fill straight across the heap
+         * (found by ASan when the status line first outgrew the bar).
+         * Nothing non-positive gets past this line.
+         */
+        if (w <= 0 || h <= 0)
+                return;
 
         pixman_image_fill_rectangles(PIXMAN_OP_SRC, dst, &c, 1,
                                      &(pixman_rectangle16_t){
@@ -714,10 +727,19 @@ static void drawbar(struct screen *s)
         /* status, right-aligned, on the current screen only */
         if (s == current_screen && status[0]) {
                 int sw = text_width(status) + s->bh / 4;
+                int sx = w - sw;
 
-                draw_text(img, status, w - sw, colors[COLOR_NORMAL_FG], w,
+                /* wider than the space: clip at the tag edge instead
+                 * of walking the layout off the left of the bar */
+                if (sx < x)
+                        sx = x;
+
+                draw_text(img, status, sx, colors[COLOR_NORMAL_FG], w,
                           s->bh);
-                w -= sw + s->bh / 4;
+
+                w = sx - s->bh / 4;
+                if (w < x)
+                        w = x;
         }
 
         /* the title field takes the rest; select colors when current */
@@ -1962,10 +1984,25 @@ out:
 /**********************************************************************/
 /* Actions                                                            */
 
+/*
+ * wl_event_loop_add_signal delivers through signalfd, which BLOCKS
+ * its signals — and the blocked mask inherits across fork and exec.
+ * Without this reset every spawned child shrugs off SIGTERM (found
+ * when fini's feeder kill returned 0 and killed nothing).
+ */
+static void unblock_signals(void)
+{
+        sigset_t set;
+
+        sigemptyset(&set);
+        sigprocmask(SIG_SETMASK, &set, 0);
+}
+
 static void spawn(const char *const *args)
 {
         if (0 == fork()) {
                 setsid();
+                unblock_signals();
                 execvp(args[0], (char *const *)args);
 
                 fprintf(stderr, "tyler: execvp %s failed\n", args[0]);
@@ -2778,6 +2815,7 @@ static int status_handler(int fd, uint32_t mask, void *unused)
         if (mask & (WL_EVENT_ERROR | WL_EVENT_HANGUP)) {
                 wl_event_source_remove(status_source);
                 status_source = 0;
+                status_pid = 0; /* the feeder died on its own */
                 close(fd);
 
                 return 0;
@@ -2809,11 +2847,13 @@ static void status_spawn(void)
         if (0 == statuscmd[0] || pipe(fds) < 0)
                 return;
 
-        if (0 == fork()) {
+        status_pid = fork();
+        if (0 == status_pid) {
                 dup2(fds[1], STDOUT_FILENO);
                 close(fds[0]);
                 close(fds[1]);
                 setsid();
+                unblock_signals();
 
                 execvp(statuscmd[0], (char *const *)statuscmd);
                 exit(1);
@@ -2834,9 +2874,12 @@ static void init(void)
 
         event_loop = wl_display_get_event_loop(display);
 
-        wl_event_loop_add_signal(event_loop, SIGINT, terminate_handler, 0);
-        wl_event_loop_add_signal(event_loop, SIGTERM, terminate_handler, 0);
-        wl_event_loop_add_signal(event_loop, SIGCHLD, reap_handler, 0);
+        signal_sources[0] = wl_event_loop_add_signal(
+                event_loop, SIGINT, terminate_handler, 0);
+        signal_sources[1] = wl_event_loop_add_signal(
+                event_loop, SIGTERM, terminate_handler, 0);
+        signal_sources[2] = wl_event_loop_add_signal(
+                event_loop, SIGCHLD, reap_handler, 0);
 
         backend = wlr_backend_autocreate(event_loop, &session);
         if (0 == backend)
@@ -2943,6 +2986,16 @@ static void run(void)
 
 static void fini(void)
 {
+        /*
+         * The feeder outlives the display on its own (setsid; it only
+         * dies on SIGPIPE at its next write) and anything holding our
+         * stderr keeps the shim's tee waiting for EOF — the lingering
+         * process the first ride's exit left behind. Kill its whole
+         * group, by saved PID only, never by name.
+         */
+        if (0 < status_pid)
+                kill(-status_pid, SIGTERM);
+
         wl_display_destroy_clients(display);
 
         /*
@@ -2973,6 +3026,9 @@ static void fini(void)
 
         if (status_source)
                 wl_event_source_remove(status_source);
+
+        for (size_t i = 0; i < 3; ++i)
+                wl_event_source_remove(signal_sources[i]);
 
         fcft_destroy(font);
         fcft_fini();
