@@ -25,6 +25,7 @@
 #include <wlr/interfaces/wlr_buffer.h>
 
 #include <wlr/backend.h>
+#include <wlr/backend/session.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
@@ -2394,6 +2395,18 @@ static int keybinding(uint32_t mods, xkb_keysym_t sym)
 /* an active menu owns every key; the repeat machinery serves both */
 static int key_dispatch(uint32_t mods, xkb_keysym_t sym)
 {
+        /*
+         * VT switching outranks everything, the menu included — it is
+         * the escape hatch. Nested backends have no session; the
+         * keysyms then fall through to the tables, matching nothing.
+         */
+        if (session && XKB_KEY_XF86Switch_VT_1 <= sym &&
+            sym <= XKB_KEY_XF86Switch_VT_12) {
+                wlr_session_change_vt(session,
+                                      sym - XKB_KEY_XF86Switch_VT_1 + 1);
+                return 1;
+        }
+
         return menu_active ? menu_key(mods, sym) : keybinding(mods, sym);
 }
 
