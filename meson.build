@@ -14,6 +14,7 @@ xkbcommon = dependency('xkbcommon')
 fcft = dependency('fcft')
 pixman = dependency('pixman-1')
 libdrm = dependency('libdrm')
+libinput = dependency('libinput')
 
 # wlroots requires the compositor to rig up the wayland-scanner protocol
 # generation itself (see dwl's Makefile for the reference recipe).
@@ -31,7 +32,7 @@ xdg_shell_h = custom_target(
 
 executable('tyler', ['tyler.c', xdg_shell_h],
            dependencies : [wlroots, wayland_server, xkbcommon,
-                           fcft, pixman, libdrm],
+                           fcft, pixman, libdrm, libinput],
            install : true)
 
 # vkbd: the keyboard oracle's key injector, never installed. The

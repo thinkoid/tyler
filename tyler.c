@@ -16,6 +16,7 @@
 
 #include <drm_fourcc.h>
 #include <fcft/fcft.h>
+#include <libinput.h>
 #include <pixman.h>
 
 #include <wayland-server-core.h>
@@ -25,6 +26,7 @@
 #include <wlr/interfaces/wlr_buffer.h>
 
 #include <wlr/backend.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/backend/session.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -2629,6 +2631,39 @@ static void new_vkbd_handler(struct wl_listener *unused, void *arg)
         wlr_keyboard_group_add_keyboard(kb->group, &v->keyboard);
 }
 
+/*
+ * The libinput knobs from config.h, set whenever a pointer appears —
+ * like keyboard repeat, nothing to revert and nothing reverts. Only
+ * the DRM backend hands out libinput devices; nested and virtual
+ * pointers fall through untouched.
+ */
+static void pointer_configure(struct wlr_input_device *device)
+{
+        struct libinput_device *d;
+
+        if (!wlr_input_device_is_libinput(device))
+                return;
+
+        d = wlr_libinput_get_device_handle(device);
+
+        if (libinput_device_config_scroll_has_natural_scroll(d))
+                libinput_device_config_scroll_set_natural_scroll_enabled(
+                        d, natural_scrolling);
+
+        /* only touchpads can tap; the rest is touchpad policy too */
+        if (0 == libinput_device_config_tap_get_finger_count(d))
+                return;
+
+        libinput_device_config_tap_set_enabled(
+                d, tap_to_click ? LIBINPUT_CONFIG_TAP_ENABLED
+                                : LIBINPUT_CONFIG_TAP_DISABLED);
+
+        if (libinput_device_config_accel_is_available(d)) {
+                libinput_device_config_accel_set_profile(d, accel_profile);
+                libinput_device_config_accel_set_speed(d, accel_speed);
+        }
+}
+
 static void new_input_handler(struct wl_listener *unused, void *arg)
 {
         struct wlr_input_device *device = arg;
@@ -2647,6 +2682,7 @@ static void new_input_handler(struct wl_listener *unused, void *arg)
                 wlr_keyboard_set_keymap(kb, keymap);
                 wlr_keyboard_group_add_keyboard(kb_main->group, kb);
         } else if (WLR_INPUT_DEVICE_POINTER == device->type) {
+                pointer_configure(device);
                 wlr_cursor_attach_input_device(cursor, device);
         }
 }

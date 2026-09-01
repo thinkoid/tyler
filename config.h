@@ -49,6 +49,19 @@ static const char *const statuscmd[] = {
 static const int repeat_rate  = 60;  /* per second */
 static const int repeat_delay = 250; /* ms */
 
+/*
+ * Pointer devices, applied the moment one appears (new_input) — the
+ * 30-libinput-local.conf policy carried over from the X sessions:
+ * natural scrolling everywhere; tap and acceleration are touchpad
+ * concerns (mice keep libinput's stock flat-ish acceleration).
+ */
+static const int natural_scrolling = 1;
+static const int tap_to_click      = 1;
+
+static const enum libinput_config_accel_profile accel_profile =
+        LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+static const double accel_speed = 0.5; /* [-1, 1] */
+
 static const char *const termcmd[] = { "foot", 0 };
 
 #define MODKEY   WLR_MODIFIER_ALT
