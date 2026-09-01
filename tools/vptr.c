@@ -4,7 +4,7 @@
  * vptr — pointer injector for the tyler oracle. Speaks
  * wlr-virtual-pointer-unstable-v1:
  *
- *      vptr XEXT YEXT [move X Y] [click left|right] ...
+ *      vptr XEXT YEXT [move X Y] [click left|right|middle] ...
  *
  * Absolute motion lands at (X/XEXT, Y/YEXT) of the whole output
  * layout, so pass the layout size as the extents and think in layout
@@ -32,6 +32,16 @@ static void die(const char *s)
 {
         fprintf(stderr, "vptr: %s\n", s);
         exit(1);
+}
+
+static uint32_t button_of(const char *s)
+{
+        if (0 == strcmp(s, "right"))
+                return BTN_RIGHT;
+        if (0 == strcmp(s, "middle"))
+                return BTN_MIDDLE;
+
+        return BTN_LEFT;
 }
 
 static void registry_global(void *unused, struct wl_registry *registry,
@@ -105,9 +115,7 @@ int main(int argc, char **argv)
                                 vp, t += 10, x, y, xext, yext);
                         zwlr_virtual_pointer_v1_frame(vp);
                 } else if (0 == strcmp(argv[i], "click") && i + 1 < argc) {
-                        uint32_t b = 0 == strcmp(argv[i + 1], "right")
-                                             ? BTN_RIGHT
-                                             : BTN_LEFT;
+                        uint32_t b = button_of(argv[i + 1]);
 
                         i += 1;
 
@@ -126,9 +134,7 @@ int main(int argc, char **argv)
                                 0 == strcmp(argv[i], "press")
                                         ? WL_POINTER_BUTTON_STATE_PRESSED
                                         : WL_POINTER_BUTTON_STATE_RELEASED;
-                        uint32_t b = 0 == strcmp(argv[i + 1], "right")
-                                             ? BTN_RIGHT
-                                             : BTN_LEFT;
+                        uint32_t b = button_of(argv[i + 1]);
 
                         i += 1;
 

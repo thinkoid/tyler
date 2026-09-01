@@ -37,6 +37,8 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_primary_selection.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_server_decoration.h>
@@ -248,6 +250,8 @@ static struct wl_listener cursor_button_listener;
 static struct wl_listener cursor_axis_listener;
 static struct wl_listener cursor_frame_listener;
 static struct wl_listener request_cursor_listener;
+static struct wl_listener request_selection_listener;
+static struct wl_listener request_primary_selection_listener;
 static struct wl_listener request_activate_listener;
 static struct wl_listener bell_ring_listener;
 
@@ -2676,6 +2680,29 @@ static void keyboard_init(void)
                                                 WL_SEAT_CAPABILITY_POINTER);
 }
 
+/*
+ * Selections travel client-to-client; the seat only brokers them.
+ * Both requests are granted unconditionally, as everywhere else.
+ */
+static void request_selection_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_seat_request_set_selection_event *event = arg;
+
+        (void)unused;
+
+        wlr_seat_set_selection(seat, event->source, event->serial);
+}
+
+static void request_primary_selection_handler(struct wl_listener *unused,
+                                              void *arg)
+{
+        struct wlr_seat_request_set_primary_selection_event *event = arg;
+
+        (void)unused;
+
+        wlr_seat_set_primary_selection(seat, event->source, event->serial);
+}
+
 /**********************************************************************/
 
 static int terminate_handler(int signo, void *unused)
@@ -2793,6 +2820,7 @@ static void init(void)
         wlr_compositor_create(display, 6, renderer);
         wlr_subcompositor_create(display);
         wlr_data_device_manager_create(display);
+        wlr_primary_selection_v1_device_manager_create(display);
 
         scene = wlr_scene_create();
 
@@ -2844,6 +2872,12 @@ static void init(void)
 
         seat = wlr_seat_create(display, "seat0");
 
+        LISTEN(&seat->events.request_set_selection,
+               &request_selection_listener, request_selection_handler);
+        LISTEN(&seat->events.request_set_primary_selection,
+               &request_primary_selection_listener,
+               request_primary_selection_handler);
+
         LISTEN(&backend->events.new_input, &new_input_listener,
                new_input_handler);
 
@@ -2893,6 +2927,8 @@ static void fini(void)
         wl_list_remove(&cursor_axis_listener.link);
         wl_list_remove(&cursor_frame_listener.link);
         wl_list_remove(&request_cursor_listener.link);
+        wl_list_remove(&request_selection_listener.link);
+        wl_list_remove(&request_primary_selection_listener.link);
         wl_list_remove(&request_activate_listener.link);
         wl_list_remove(&bell_ring_listener.link);
 
