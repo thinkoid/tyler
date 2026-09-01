@@ -32,7 +32,7 @@ static const int showbar = 1;
  * One string feeds the bar (and later the menu). The nerd-patched
  * Iosevka, as in classic; the bar height derives from it.
  */
-static const char *fontname = "IosevkaTerm Nerd Font:style=Light:size=24";
+static const char *fontname = "IosevkaTerm Nerd Font:style=Light:size=28";
 
 /*
  * The status feeder: spawned by the compositor, one line on stdout per
