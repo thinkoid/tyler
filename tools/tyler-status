@@ -1,0 +1,108 @@
+#!/bin/sh
+# tyler-status -- volume / wifi / cpu / temp / battery / date for tyler's
+# bar; sibling of kwm-status. Two transports, one per tyler:
+#   default  tyler-classic (X11): each cycle sets WM_NAME on the root --
+#            via xprop, since xsetroot is not installed.
+#   -o       wayland tyler: one line per cycle on stdout; the compositor
+#            spawns us and reads the pipe.
+# Plain text throughout: the bar draws no color escapes.
+#
+# Either transport ends the loop when its session dies -- xprop fails
+# without the X server, the pipe breaks without the compositor -- so a
+# stale loop never survives into the next session.
+#
+# Assumes a typical Intel laptop: BAT0, wlan0, coretemp hwmon. Wire
+# ~/.local/bin/tyler-status as a symlink here; the repo is the truth.
+
+# Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
+# wifi, cpu chip, thermometer, battery ladder full->empty, bolt.
+I_VOL=$(printf '\357\200\250')
+I_NET=$(printf '\357\207\253')
+I_CPU=$(printf '\357\213\233')
+I_TMP=$(printf '\357\213\211')
+I_B4=$(printf '\357\211\200') I_B3=$(printf '\357\211\201')
+I_B2=$(printf '\357\211\202') I_B1=$(printf '\357\211\203')
+I_B0=$(printf '\357\211\204')
+I_CHG=$(printf '\357\203\247')
+
+out=xprop
+[ "$1" = "-o" ] && out=stdout
+
+# Color escapes, kwm's grammar and solarized accents: ^#RRGGBBAA sets,
+# ^#! restores the bar default. Only the wayland bar parses them, so
+# they exist only on the stdout transport -- the X bar draws plain.
+C_VOL= C_NET= C_CPU= C_TMP= C_BAT= C_CHG= C_RED= NRM=
+if [ stdout = "$out" ]; then
+    C_VOL="^#268bd2ff" C_NET="^#2aa198ff" C_CPU="^#859900ff"
+    C_TMP="^#cb4b16ff" C_BAT="^#b58900ff" C_CHG="^#859900ff"
+    C_RED="^#dc322fff" NRM="^#!"
+fi
+
+prev_total=0 prev_idle=0
+
+# Busy% between two /proc/stat samples (the sleep is the sample gap, so
+# the first line after startup reads 100% for an instant and settles).
+cpu_pct() {
+    set -- $(head -1 /proc/stat)
+    shift
+    total=$(($1 + $2 + $3 + $4 + $5 + $6 + $7 + $8))
+    idle=$(($4 + $5))
+    d_total=$((total - prev_total)) d_idle=$((idle - prev_idle))
+    prev_total=$total prev_idle=$idle
+    if [ "$d_total" -gt 0 ]; then
+        echo $((100 * (d_total - d_idle) / d_total))
+    else
+        echo 0
+    fi
+}
+
+while :; do
+    cpu=$(cpu_pct)
+
+    temp=$(($(cat /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input) / 1000))
+
+    cap=$(cat /sys/class/power_supply/BAT0/capacity)
+    if   [ "$cap" -ge 90 ]; then bicon=$I_B4
+    elif [ "$cap" -ge 65 ]; then bicon=$I_B3
+    elif [ "$cap" -ge 40 ]; then bicon=$I_B2
+    elif [ "$cap" -ge 15 ]; then bicon=$I_B1
+    else                         bicon=$I_B0
+    fi
+    cbat=$C_BAT
+    [ "$cap" -lt 15 ] && cbat=$C_RED
+
+    case $(cat /sys/class/power_supply/BAT0/status) in
+        Charging) bat="${C_CHG}${I_CHG}${NRM}  ${cap}%" ;;
+        *)        bat="${cbat}${bicon}${NRM}  ${cap}%" ;;
+    esac
+
+    # iw, not iwgetid: wireless_tools is not installed fleet-wide, iw is.
+    ssid=$(iw dev wlan0 info 2>/dev/null |
+               awk '$1 == "ssid" { $1 = ""; sub(/^ /, ""); print; exit }')
+    if [ -n "$ssid" ]; then
+        q=$(awk '$1 ~ /^wlan0/ { gsub(/\./, "", $3); printf "%d", $3 * 100 / 70 }' /proc/net/wireless)
+        net="${C_NET}${I_NET}${NRM}  ${ssid}${q:+ ${q}%}"
+    else
+        net="${C_NET}${I_NET}${NRM}  --"
+    fi
+
+    if [ "$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null)" = "Mute: yes" ]; then
+        vol="${C_VOL}${I_VOL}${NRM}  --"
+    else
+        vol="${C_VOL}${I_VOL}${NRM}  $(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '{ print $5; exit }')"
+        [ "$vol" = "${C_VOL}${I_VOL}${NRM}  " ] && vol="${C_VOL}${I_VOL}${NRM}  ?"
+    fi
+
+    line=$(printf '%s  %s  %s  %s%%  %s  %s\302\260C  %s  %s' \
+              "$vol" "$net" "${C_CPU}${I_CPU}${NRM}" "$cpu" \
+              "${C_TMP}${I_TMP}${NRM}" "$temp" "$bat" \
+              "$(date '+%a %b %e %H:%M %Y')")
+
+    if [ stdout = "$out" ]; then
+        printf '%s\n' "$line" || exit
+    else
+        xprop -root -f WM_NAME 8s -set WM_NAME "$line" || exit
+    fi
+
+    sleep 5
+done
