@@ -33,6 +33,7 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_keyboard_group.h>
@@ -45,6 +46,7 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
@@ -3050,6 +3052,17 @@ static void init(void)
         wlr_subcompositor_create(display);
         wlr_data_device_manager_create(display);
         wlr_primary_selection_v1_device_manager_create(display);
+
+        /*
+         * Both scale protocols, zero handlers — the scene renders
+         * viewports natively. Chrome is the reason: its fractional
+         * device-scale path attaches odd-sized buffers under an
+         * integer wl_surface scale (a protocol violation that killed
+         * it on map) unless wp_viewporter is there to express the
+         * true size.
+         */
+        wlr_viewporter_create(display);
+        wlr_fractional_scale_manager_v1_create(display, 1);
 
         scene = wlr_scene_create();
 
