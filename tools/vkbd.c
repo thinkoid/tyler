@@ -58,6 +58,12 @@ static const struct {
         { "minus",     KEY_MINUS     },
         { "print",     KEY_SYSRQ     },
 
+        { "volup",    KEY_VOLUMEUP       },
+        { "voldown",  KEY_VOLUMEDOWN     },
+        { "mute",     KEY_MUTE           },
+        { "brightup", KEY_BRIGHTNESSUP   },
+        { "brightdn", KEY_BRIGHTNESSDOWN },
+
         { "1", KEY_1 }, { "2", KEY_2 }, { "3", KEY_3 },
         { "4", KEY_4 }, { "5", KEY_5 }, { "6", KEY_6 },
         { "7", KEY_7 }, { "8", KEY_8 }, { "9", KEY_9 },

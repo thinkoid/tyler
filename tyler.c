@@ -263,6 +263,11 @@ static struct wl_listener bell_ring_listener;
 /* the key table in config.h points at these */
 static void zoom(unsigned);
 static void spawn_terminal(unsigned);
+static void volume_up(unsigned);
+static void volume_down(unsigned);
+static void volume_mute(unsigned);
+static void brightness_up(unsigned);
+static void brightness_down(unsigned);
 static void toggle_bar(unsigned);
 static void focus_next(unsigned);
 static void focus_prev(unsigned);
@@ -1290,6 +1295,43 @@ static void request_state_handler(struct wl_listener *listener, void *arg)
 
 static void focus(struct client *);
 
+/*
+ * Placement policy (criterion 6): the internal panel sits leftmost,
+ * externals follow to the right in appearance order — decided by
+ * connector TYPE, never by output name in config. One binary, one
+ * config, every machine.
+ */
+static int screen_is_internal(const struct screen *s)
+{
+        return 0 == strncmp(s->output->name, "eDP-", 4) ||
+               0 == strncmp(s->output->name, "LVDS-", 5) ||
+               0 == strncmp(s->output->name, "DSI-", 4);
+}
+
+/*
+ * Re-pack the whole row left-to-right. wlr_output_layout_add is
+ * add-or-move, so calling it for every screen is the whole algorithm;
+ * screens is newest-first, hence the reverse walks.
+ */
+static void layout_arrange(void)
+{
+        struct screen *s;
+        int x = 0, pass;
+
+        for (pass = 0; pass < 2; ++pass)
+                wl_list_for_each_reverse(s, &screens, link) {
+                        if (screen_is_internal(s) != (0 == pass))
+                                continue;
+
+                        wlr_output_layout_add(output_layout, s->output,
+                                              x, 0);
+                        wlr_log(WLR_INFO, "layout: %s at %d",
+                                s->output->name, x);
+
+                        x += s->output->width;
+                }
+}
+
 static void output_destroy_handler(struct wl_listener *listener, void *arg)
 {
         struct screen *s = wl_container_of(listener, s, destroy);
@@ -1333,6 +1375,7 @@ static void output_destroy_handler(struct wl_listener *listener, void *arg)
 
         free(s);
 
+        layout_arrange();
         arrange(survivor);
         focus(current_client());
 }
@@ -1385,9 +1428,13 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
         wl_list_insert(&screens, &s->link);
 
         s->scene_output = wlr_scene_output_create(scene, out);
-        l_output = wlr_output_layout_add_auto(output_layout, out);
+
+        /* provisional spot; layout_arrange packs the row by policy */
+        l_output = wlr_output_layout_add(output_layout, out, 0, 0);
         wlr_scene_output_layout_add_output(scene_layout, l_output,
                                            s->scene_output);
+
+        layout_arrange();
 
         if (0 == current_screen)
                 current_screen = s;
@@ -2083,6 +2130,41 @@ static void spawn_terminal(unsigned unused)
         (void)unused;
 
         spawn(termcmd);
+}
+
+static void volume_up(unsigned unused)
+{
+        (void)unused;
+
+        spawn(volupcmd);
+}
+
+static void volume_down(unsigned unused)
+{
+        (void)unused;
+
+        spawn(voldowncmd);
+}
+
+static void volume_mute(unsigned unused)
+{
+        (void)unused;
+
+        spawn(volmutecmd);
+}
+
+static void brightness_up(unsigned unused)
+{
+        (void)unused;
+
+        spawn(brightupcmd);
+}
+
+static void brightness_down(unsigned unused)
+{
+        (void)unused;
+
+        spawn(brightdowncmd);
 }
 
 static void quit(unsigned unused)

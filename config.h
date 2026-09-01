@@ -64,6 +64,19 @@ static const double accel_speed = 0.5; /* [-1, 1] */
 
 static const char *const termcmd[] = { "foot", 0 };
 
+/* the XF86 media rows: pactl and light, the tools this fleet has */
+static const char *const volupcmd[] = {
+        "pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%", 0
+};
+static const char *const voldowncmd[] = {
+        "pactl", "set-sink-volume", "@DEFAULT_SINK@", "-5%", 0
+};
+static const char *const volmutecmd[] = {
+        "pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle", 0
+};
+static const char *const brightupcmd[]   = { "light", "-A", "5", 0 };
+static const char *const brightdowncmd[] = { "light", "-U", "5", 0 };
+
 #define MODKEY   WLR_MODIFIER_ALT
 #define MODSHIFT (MODKEY | WLR_MODIFIER_SHIFT)
 
@@ -87,6 +100,13 @@ static const struct key keys[] = {
         { MODSHIFT, XKB_KEY_less,    move_prev_screen,  0 },
         { MODSHIFT, XKB_KEY_greater, move_next_screen,  0 },
         { 0,        XKB_KEY_Print,   screenshot,        0 },
+
+        { 0, XKB_KEY_XF86AudioRaiseVolume,  volume_up,       0 },
+        { 0, XKB_KEY_XF86AudioLowerVolume,  volume_down,     0 },
+        { 0, XKB_KEY_XF86AudioMute,         volume_mute,     0 },
+        { 0, XKB_KEY_XF86MonBrightnessUp,   brightness_up,   0 },
+        { 0, XKB_KEY_XF86MonBrightnessDown, brightness_down, 0 },
+
         { MODKEY,   XKB_KEY_t,       tile_current,      0 },
         { MODSHIFT, XKB_KEY_Q,       quit,              0 },
 
