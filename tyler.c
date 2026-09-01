@@ -212,6 +212,7 @@ static struct wlr_output_layout *output_layout;
 static struct wlr_scene_tree *layer_tile;
 static struct wlr_scene_tree *layer_bar;
 static struct wlr_scene_tree *layer_fs;
+static struct wlr_scene_tree *layer_drag;   /* DnD icon, rides the cursor */
 
 static struct fcft_font *font;
 static char status[256];
@@ -259,6 +260,9 @@ static struct wl_listener cursor_frame_listener;
 static struct wl_listener request_cursor_listener;
 static struct wl_listener request_selection_listener;
 static struct wl_listener request_primary_selection_listener;
+static struct wl_listener request_start_drag_listener;
+static struct wl_listener start_drag_listener;
+static struct wl_listener drag_destroy_listener;
 static struct wl_listener request_activate_listener;
 static struct wl_listener bell_ring_listener;
 
@@ -2417,6 +2421,9 @@ static int grab_mode;
 static double grab_dx, grab_dy;         /* cursor offset into the client */
 static struct wlr_box grab_box;         /* geometry at grab start */
 
+/* a button is down and the press went to a client (implicit grab) */
+static int button_held;
+
 static void grab_start(struct client *c, int mode)
 {
         struct state *state = state_of(c);
@@ -2438,6 +2445,10 @@ static void grab_start(struct client *c, int mode)
         grab_box = state->r;
         grab_dx = cursor->x - grab_box.x;
         grab_dy = cursor->y - grab_box.y;
+
+        wlr_cursor_set_xcursor(cursor, cursor_mgr,
+                               GRAB_MOVE == mode ? "fleur"
+                                                 : "bottom_right_corner");
 }
 
 static void mouse_move(struct client *c)
@@ -2457,6 +2468,10 @@ static void mouse_resize(struct client *c)
  */
 static void process_motion(uint32_t time)
 {
+        /* the DnD icon layer rides the cursor; empty otherwise, free */
+        wlr_scene_node_set_position(&layer_drag->node,
+                                    (int)cursor->x, (int)cursor->y);
+
         if (GRAB_MOVE == grab_mode) {
                 struct wlr_box r = state_of(grab_client)->r;
 
@@ -2486,6 +2501,34 @@ static void process_motion(uint32_t time)
         struct screen *s;
 
         c = client_at(cursor->x, cursor->y, &surface, &sx, &sy);
+
+        /*
+         * The implicit grab: while a button is down, the surface that
+         * took the press keeps the motion stream wherever the cursor
+         * wanders — otherwise a selection drag dies at the window edge
+         * and sloppy focus steals the window mid-drag. An active DnD
+         * session is exempt: its grab reads the surface under the
+         * cursor to find the drop target. Toplevels and popups both
+         * hang their scene tree on surface->data, so the tree's
+         * absolute position recovers surface-local coordinates.
+         */
+        if (button_held && 0 == seat->drag &&
+            surface != seat->pointer_state.focused_surface) {
+                struct wlr_surface *held =
+                        seat->pointer_state.focused_surface;
+                struct wlr_scene_tree *tree =
+                        held ? wlr_surface_get_root_surface(held)->data : 0;
+
+                if (tree) {
+                        int lx, ly;
+
+                        wlr_scene_node_coords(&tree->node, &lx, &ly);
+                        wlr_seat_pointer_notify_motion(seat, time,
+                                                       cursor->x - lx,
+                                                       cursor->y - ly);
+                        return;
+                }
+        }
 
         /*
          * Criterion 2: crossing into another output moves screen
@@ -2550,12 +2593,19 @@ static void cursor_button_handler(struct wl_listener *unused, void *arg)
         (void)unused;
 
         if (WL_POINTER_BUTTON_STATE_RELEASED == event->state) {
+                button_held = 0;
+
                 if (GRAB_NONE != grab_mode) {
                         grab_mode = GRAB_NONE;
                         grab_client = 0;
+
+                        wlr_cursor_set_xcursor(cursor, cursor_mgr,
+                                               "default");
                         return;
                 }
         } else {
+                button_held = 1;
+
                 struct wlr_keyboard *kb = wlr_seat_get_keyboard(seat);
                 uint32_t mods = kb ? wlr_keyboard_get_modifiers(kb) : 0;
 
@@ -2906,6 +2956,69 @@ static void keyboard_init(void)
 }
 
 /*
+ * DnD, dwl's shape: the serial gate lets only a live pointer press
+ * open a drag; wlroots' pointer grab then owns enter/motion until the
+ * drop. The icon (a tab thumbnail, a dragged file) joins the scene
+ * under layer_drag, which process_motion keeps glued to the cursor.
+ */
+static void request_start_drag_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_seat_request_start_drag_event *event = arg;
+
+        (void)unused;
+
+        if (wlr_seat_validate_pointer_grab_serial(seat, event->origin,
+                                                  event->serial))
+                wlr_seat_start_pointer_drag(seat, event->drag,
+                                            event->serial);
+        else
+                wlr_data_source_destroy(event->drag->source);
+}
+
+/*
+ * The drop signal: the drag grab swallowed every enter on the way, so
+ * hand pointer focus back to whatever the cursor is over now, and take
+ * the grabbing hand with it. The icon's scene node minds itself.
+ */
+static void drag_destroy_handler(struct wl_listener *listener, void *arg)
+{
+        struct timespec now;
+
+        (void)arg;
+
+        clock_gettime(CLOCK_MONOTONIC, &now);
+
+        wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+
+        focus(current_client());
+        process_motion((uint32_t)(now.tv_sec * 1000 +
+                                  now.tv_nsec / 1000000));
+
+        wl_list_remove(&listener->link);
+}
+
+static void start_drag_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_drag *drag = arg;
+
+        (void)unused;
+
+        /*
+         * The grabbing hand for the duration; a drop target that sets
+         * its own image (copy/move arrows) wins while hovered, as it
+         * should. The listener is a re-armed static — one drag per
+         * seat. An iconless drag still works; there is just nothing
+         * to show.
+         */
+        wlr_cursor_set_xcursor(cursor, cursor_mgr, "grabbing");
+        LISTEN(&drag->events.destroy, &drag_destroy_listener,
+               drag_destroy_handler);
+
+        if (drag->icon)
+                wlr_scene_drag_icon_create(layer_drag, drag->icon);
+}
+
+/*
  * Selections travel client-to-client; the seat only brokers them.
  * Both requests are granted unconditionally, as everywhere else.
  */
@@ -3069,6 +3182,7 @@ static void init(void)
         layer_tile = wlr_scene_tree_create(&scene->tree);
         layer_bar = wlr_scene_tree_create(&scene->tree);
         layer_fs = wlr_scene_tree_create(&scene->tree);
+        layer_drag = wlr_scene_tree_create(&scene->tree);
 
         if (!fcft_init(FCFT_LOG_COLORIZE_NEVER, 0, FCFT_LOG_CLASS_ERROR))
                 die("fcft_init failed");
@@ -3114,6 +3228,10 @@ static void init(void)
 
         seat = wlr_seat_create(display, "seat0");
 
+        LISTEN(&seat->events.request_start_drag,
+               &request_start_drag_listener, request_start_drag_handler);
+        LISTEN(&seat->events.start_drag, &start_drag_listener,
+               start_drag_handler);
         LISTEN(&seat->events.request_set_selection,
                &request_selection_listener, request_selection_handler);
         LISTEN(&seat->events.request_set_primary_selection,
@@ -3179,6 +3297,8 @@ static void fini(void)
         wl_list_remove(&cursor_axis_listener.link);
         wl_list_remove(&cursor_frame_listener.link);
         wl_list_remove(&request_cursor_listener.link);
+        wl_list_remove(&request_start_drag_listener.link);
+        wl_list_remove(&start_drag_listener.link);
         wl_list_remove(&request_selection_listener.link);
         wl_list_remove(&request_primary_selection_listener.link);
         wl_list_remove(&request_activate_listener.link);
