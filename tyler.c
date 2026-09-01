@@ -56,11 +56,6 @@
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
 #include <wlr/util/log.h>
 
-/*
- * Unused as yet; proves the wayland-scanner rigging end to end.
- */
-#include <xdg-shell-protocol.h>
-
 #define LISTEN(src, listener, handler)             \
         do {                                       \
                 (listener)->notify = (handler);    \
@@ -1308,7 +1303,9 @@ static void request_state_handler(struct wl_listener *listener, void *arg)
 
         (void)listener;
 
-        wlr_output_commit_state(event->output, event->state);
+        if (!wlr_output_commit_state(event->output, event->state))
+                wlr_log(WLR_ERROR, "screen %s: requested state refused",
+                        event->output->name);
 
         /* a width change moves every output to the right of this one */
         layout_arrange();
@@ -1413,7 +1410,12 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
 
         (void)unused;
 
-        wlr_output_init_render(out, allocator, renderer);
+        /* an output that cannot render is an output we do not have */
+        if (!wlr_output_init_render(out, allocator, renderer)) {
+                wlr_log(WLR_ERROR, "screen %s: init_render failed, "
+                        "output rejected", out->name);
+                return;
+        }
 
         s = calloc(1, sizeof *s);
         if (0 == s)
@@ -1439,7 +1441,10 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
                 wlr_output_state_set_mode(&state,
                                           wlr_output_preferred_mode(out));
 
-        wlr_output_commit_state(out, &state);
+        if (!wlr_output_commit_state(out, &state))
+                wlr_log(WLR_ERROR, "screen %s: initial commit failed",
+                        out->name);
+
         wlr_output_state_finish(&state);
 
         LISTEN(&out->events.frame, &s->frame, frame_handler);
@@ -2741,9 +2746,13 @@ static void new_vptr_handler(struct wl_listener *unused, void *arg)
 static void cursor_init(void)
 {
         cursor = wlr_cursor_create();
+        if (0 == cursor)
+                die("wlr_cursor_create failed");
         wlr_cursor_attach_output_layout(cursor, output_layout);
 
         cursor_mgr = wlr_xcursor_manager_create(0, 24);
+        if (0 == cursor_mgr)
+                die("wlr_xcursor_manager_create failed");
 
         LISTEN(&cursor->events.motion, &cursor_motion_listener,
                cursor_motion_handler);
@@ -3264,7 +3273,8 @@ static void init(void)
                 die("wlr_renderer_autocreate failed");
 
         /* without this, no buffer-bearing client can attach */
-        wlr_renderer_init_wl_shm(renderer, display);
+        if (!wlr_renderer_init_wl_shm(renderer, display))
+                die("wlr_renderer_init_wl_shm failed");
 
         allocator = wlr_allocator_autocreate(backend, renderer);
         if (0 == allocator)
@@ -3287,6 +3297,8 @@ static void init(void)
         wlr_fractional_scale_manager_v1_create(display, 1);
 
         scene = wlr_scene_create();
+        if (0 == scene)
+                die("wlr_scene_create failed");
 
         layer_tile = wlr_scene_tree_create(&scene->tree);
         layer_float = wlr_scene_tree_create(&scene->tree);
@@ -3337,6 +3349,8 @@ static void init(void)
                &bell_ring_listener, bell_ring_handler);
 
         seat = wlr_seat_create(display, "seat0");
+        if (0 == seat)
+                die("wlr_seat_create failed");
 
         LISTEN(&seat->events.request_start_drag,
                &request_start_drag_listener, request_start_drag_handler);
@@ -3426,13 +3440,20 @@ static void fini(void)
         fcft_destroy(font);
         fcft_fini();
 
+        /*
+         * Reverse order, with one local constraint on top of tinywl's
+         * recipe: the backend goes before the scene, because output
+         * death runs our handlers and they touch scene state (bars);
+         * the scene goes before the renderer, whose buffers it holds.
+         * Exit would mask the leaks; the sanitizer does not.
+         */
         wlr_backend_destroy(backend);
+        wlr_scene_node_destroy(&scene->tree.node);
         wlr_cursor_destroy(cursor);
         wlr_xcursor_manager_destroy(cursor_mgr);
+        wlr_allocator_destroy(allocator);
+        wlr_renderer_destroy(renderer);
         wl_display_destroy(display);
-
-        /* the scene is not owned by the display; last out */
-        wlr_scene_node_destroy(&scene->tree.node);
 }
 
 int main(void)

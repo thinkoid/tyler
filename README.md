@@ -54,9 +54,17 @@ Building
     meson setup build
     ninja -C build
 
-Dependencies: wlroots 0.19, wayland-server, xkbcommon, fcft, pixman, libdrm,
-libinput. The build also produces `vkbd` and `vptr`, protocol-level input
-injectors used by the test harness; they are never installed.
+Dependencies: wlroots 0.19, wayland-server, wayland-protocols, xkbcommon,
+fcft, pixman, libdrm, libinput. The build also produces `vkbd` and `vptr`,
+protocol-level input injectors used by the test harness; they are never
+installed. `tools/tyler-status` is installed alongside the compositor —
+config.h names it by PATH.
+
+Link-time is only half the story. The default config spawns `foot` and
+drives volume and backlight through `pactl` and `light`; the bundled status
+feeder reads `iw`, `BAT0`, `wlan0`, and `coretemp`, and the bar's glyphs
+want a Nerd font. All of it is swappable in config.h and the feeder script —
+these are this fleet's tools, not requirements of the compositor.
 
 Running
 -------

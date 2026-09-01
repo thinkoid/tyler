@@ -24,6 +24,8 @@ wayland_scanner = find_program(
 
 protocol_dir = dependency('wayland-protocols').get_variable('pkgdatadir')
 
+# Not a leftover: wlroots' public wlr_xdg_shell.h includes the generated
+# header, so the target is load-bearing for anyone including it.
 xdg_shell_h = custom_target(
         'xdg-shell-protocol.h',
         input : protocol_dir / 'stable/xdg-shell/xdg-shell.xml',
@@ -34,6 +36,12 @@ executable('tyler', ['tyler.c', xdg_shell_h],
            dependencies : [wlroots, wayland_server, xkbcommon,
                            fcft, pixman, libdrm, libinput],
            install : true)
+
+# The status feeder config.h names by PATH; without it an installed
+# compositor shows an empty status field.
+install_data('tools/tyler-status',
+             install_dir : get_option('bindir'),
+             install_mode : 'rwxr-xr-x')
 
 # vkbd: the keyboard oracle's key injector, never installed. The
 # virtual-keyboard XML is vendored (wlroots ships it, wayland-protocols
