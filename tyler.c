@@ -536,20 +536,77 @@ static int utf8_encode(uint32_t cp, char *out)
 }
 
 /*
+ * kwm's status color escapes: ^#RRGGBBAA switches the text color,
+ * ^#! restores the caller's default. Consumes and applies one escape
+ * at *s, or leaves *s alone and returns 0 — malformed sequences fall
+ * through and draw literally.
+ */
+static int parse_color(const char **s, const float def[4], float out[4])
+{
+        const char *p = *s;
+        unsigned v = 0;
+        int i;
+
+        if ('^' != p[0] || '#' != p[1])
+                return 0;
+
+        if ('!' == p[2]) {
+                memcpy(out, def, 4 * sizeof *out);
+                *s = p + 3;
+                return 1;
+        }
+
+        for (i = 2; i < 10; ++i) {
+                int c = p[i];
+
+                if ('0' <= c && c <= '9')
+                        c -= '0';
+                else if ('a' <= c && c <= 'f')
+                        c -= 'a' - 10;
+                else if ('A' <= c && c <= 'F')
+                        c -= 'A' - 10;
+                else
+                        return 0;
+
+                v = v << 4 | (unsigned)c;
+        }
+
+        out[0] = (float)(v >> 24 & 0xff) / 255.0f;
+        out[1] = (float)(v >> 16 & 0xff) / 255.0f;
+        out[2] = (float)(v >> 8 & 0xff) / 255.0f;
+        out[3] = (float)(v & 0xff) / 255.0f;
+
+        *s = p + 10;
+        return 1;
+}
+
+/*
  * Glyphs composite through their alpha mask in the fg color; color
- * glyphs (emoji, nerd icons) blend as-is.
+ * glyphs (emoji, nerd icons) blend as-is. With escapes set the kwm
+ * color sequences apply; without, they draw as the text they are —
+ * only the status field speaks the protocol.
  */
 static int draw_text(pixman_image_t *dst, const char *utf8, int x,
-                     const float fg[4], int max_x, int bh)
+                     const float fg[4], int max_x, int bh, int escapes)
 {
         pixman_color_t c = pixman_color(fg);
         pixman_image_t *src = pixman_image_create_solid_fill(&c);
 
         int baseline = (bh + font->ascent - font->descent) / 2;
+        float cur[4];
 
         while (*utf8) {
                 const struct fcft_glyph *g;
-                uint32_t cp = utf8_next(&utf8);
+                uint32_t cp;
+
+                if (escapes && parse_color(&utf8, fg, cur)) {
+                        pixman_image_unref(src);
+                        c = pixman_color(cur);
+                        src = pixman_image_create_solid_fill(&c);
+                        continue;
+                }
+
+                cp = utf8_next(&utf8);
 
                 g = fcft_rasterize_char_utf32(font, cp, FCFT_SUBPIXEL_NONE);
                 if (0 == g)
@@ -577,19 +634,30 @@ static int draw_text(pixman_image_t *dst, const char *utf8, int x,
         return x;
 }
 
-static int text_width(const char *utf8)
+static int text_width_e(const char *utf8, int escapes)
 {
+        const float def[4] = { 0 };
+        float dump[4];
         int w = 0;
 
         while (*utf8) {
-                const struct fcft_glyph *g = fcft_rasterize_char_utf32(
-                        font, utf8_next(&utf8), FCFT_SUBPIXEL_NONE);
+                const struct fcft_glyph *g;
 
+                if (escapes && parse_color(&utf8, def, dump))
+                        continue;
+
+                g = fcft_rasterize_char_utf32(font, utf8_next(&utf8),
+                                              FCFT_SUBPIXEL_NONE);
                 if (g)
                         w += g->advance.x;
         }
 
         return w;
+}
+
+static int text_width(const char *utf8)
+{
+        return text_width_e(utf8, 0);
 }
 
 /* the drawn buffer's road into the scene, dump hook included */
@@ -707,7 +775,7 @@ static void drawbar(struct screen *s)
                 }
 
                 fill_rect(img, x, 0, cw, s->bh, bg);
-                draw_text(img, tag, x + pad, fg, x + cw, s->bh);
+                draw_text(img, tag, x + pad, fg, x + cw, s->bh, 0);
 
                 if (occ & 1U << i)
                         fill_rect(img, x + pad,
@@ -726,7 +794,7 @@ static void drawbar(struct screen *s)
 
         /* status, right-aligned, on the current screen only */
         if (s == current_screen && status[0]) {
-                int sw = text_width(status) + s->bh / 4;
+                int sw = text_width_e(status, 1) + s->bh / 4;
                 int sx = w - sw;
 
                 /* wider than the space: clip at the tag edge instead
@@ -735,7 +803,7 @@ static void drawbar(struct screen *s)
                         sx = x;
 
                 draw_text(img, status, sx, colors[COLOR_NORMAL_FG], w,
-                          s->bh);
+                          s->bh, 1);
 
                 w = sx - s->bh / 4;
                 if (w < x)
@@ -752,7 +820,7 @@ static void drawbar(struct screen *s)
         if (c && c->toplevel->title)
                 draw_text(img, c->toplevel->title, x + s->bh / 4,
                           colors[sel ? COLOR_SELECT_FG : COLOR_NORMAL_FG],
-                          w, s->bh);
+                          w, s->bh, 0);
 
         bar_commit(s, buf, img);
 }
@@ -894,7 +962,7 @@ static void draw_menu(pixman_image_t *img, struct screen *s)
 
         /* the input field, caret at the end of the text */
         x = draw_text(img, menu_input, pad, colors[COLOR_SELECT_FG],
-                      inw - pad, s->bh);
+                      inw - pad, s->bh, 0);
         fill_rect(img, x + 1, 2, 1, s->bh - 4, colors[COLOR_SELECT_FG]);
 
         /* page so the selection stays visible */
@@ -921,7 +989,7 @@ static void draw_menu(pixman_image_t *img, struct screen *s)
                           colors[sel ? COLOR_SELECT_BG : COLOR_NORMAL_BG]);
                 draw_text(img, menu_matches[i], x + pad,
                           colors[sel ? COLOR_SELECT_FG : COLOR_NORMAL_FG],
-                          x + tw < w ? x + tw - pad : w, s->bh);
+                          x + tw < w ? x + tw - pad : w, s->bh, 0);
 
                 x += tw;
         }
