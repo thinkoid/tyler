@@ -87,11 +87,9 @@ enum {
  */
 struct state {
         struct wlr_box r;               /* border box, layout coordinates */
-        unsigned tags;
 
         unsigned floating   : 1;
         unsigned fullscreen : 1;
-        unsigned urgent     : 1;
 };
 
 struct client {
@@ -99,6 +97,14 @@ struct client {
         struct wl_list focus_link;      /* in fstack, global MRU */
 
         struct screen *screen;          /* NULL is legal: orphan */
+
+        /*
+         * Identity, not geometry: tags and urgency persist across the
+         * fullscreen snapshot flip — a tag change made while
+         * fullscreen must survive leaving it.
+         */
+        unsigned tags;
+        unsigned urgent : 1;
 
         struct state state[2];
         int current_state;
@@ -293,6 +299,9 @@ static void quit(unsigned);
 static void mouse_move(struct client *);
 static void mouse_resize(struct client *);
 
+/* unmap must be able to kill an active grab (see grab_cancel) */
+static void grab_cancel(struct client *);
+
 #include "config.h"
 
 static void die(const char *s)
@@ -308,7 +317,7 @@ static struct state *state_of(struct client *c)
 
 static int visible_on(struct client *c, struct screen *s)
 {
-        return s && c->screen == s && (state_of(c)->tags & s->tags);
+        return s && c->screen == s && (c->tags & s->tags);
 }
 
 static int tiled_on(struct client *c, struct screen *s)
@@ -759,10 +768,10 @@ static void drawbar(struct screen *s)
                 if (c->screen != s)
                         continue;
 
-                occ |= state_of(c)->tags;
+                occ |= c->tags;
 
-                if (state_of(c)->urgent)
-                        urg |= state_of(c)->tags;
+                if (c->urgent)
+                        urg |= c->tags;
         }
 
         /* tags: viewed = select bg, occupied = underline, urgent = swap */
@@ -1290,6 +1299,8 @@ static void frame_handler(struct wl_listener *listener, void *arg)
         wlr_scene_output_send_frame_done(s->scene_output, &now);
 }
 
+static void layout_arrange(void);
+
 static void request_state_handler(struct wl_listener *listener, void *arg)
 {
         struct wlr_output_event_request_state *event = arg;
@@ -1297,6 +1308,9 @@ static void request_state_handler(struct wl_listener *listener, void *arg)
         (void)listener;
 
         wlr_output_commit_state(event->output, event->state);
+
+        /* a width change moves every output to the right of this one */
+        layout_arrange();
 }
 
 static void focus(struct client *);
@@ -1394,6 +1408,7 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
         struct screen_memory *m;
         struct screen *s;
         struct client *c;
+        int adopted;
 
         (void)unused;
 
@@ -1440,15 +1455,27 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
         wlr_scene_output_layout_add_output(scene_layout, l_output,
                                            s->scene_output);
 
-        layout_arrange();
-
         if (0 == current_screen)
                 current_screen = s;
 
-        /* re-adopt clients orphaned by an earlier output death */
+        /*
+         * Re-adopt clients orphaned by an earlier output death BEFORE
+         * the packing below, so they land arranged on this screen —
+         * and give focus back explicitly: nothing else will.
+         */
+        adopted = 0;
         wl_list_for_each(c, &clients, link)
-                if (0 == c->screen)
+                if (0 == c->screen) {
                         c->screen = s;
+                        adopted = 1;
+                }
+
+        layout_arrange();
+
+        if (adopted) {
+                arrange(s);
+                focus(current_client());
+        }
 
         wlr_log(WLR_INFO, "screen %s: %dx%d",
                 out->name, out->width, out->height);
@@ -1476,7 +1503,7 @@ static void focus(struct client *c)
                 /* unconditional: kills classic's abutting-boundary bug */
                 current_screen = c->screen;
 
-                state_of(c)->urgent = 0;
+                c->urgent = 0;
                 set_border_color(c, colors[COLOR_SELECT_BORDER]);
                 wlr_scene_node_raise_to_top(&c->scene->node);
         }
@@ -1544,8 +1571,9 @@ static void resize(struct client *c, struct wlr_box r)
 /*
  * Classic's double buffer earns its keep: entering fullscreen flips
  * current_state to a scratch copy; leaving flips back to the saved
- * pre-fullscreen state — geometry, flags, and tags all restored in one
- * move.
+ * pre-fullscreen state — geometry and floating restored in one move.
+ * Tags and urgency are identity, not snapshot: they live on the
+ * client and survive the flip.
  */
 static void set_fullscreen(struct client *c, int on)
 {
@@ -1709,10 +1737,10 @@ static void map_handler(struct wl_listener *listener, void *arg)
                 struct client *p = c->toplevel->parent->base->data;
 
                 /* transient: borrow the parent's tags, float */
-                state->tags = p ? state_of(p)->tags : 1;
+                c->tags = p ? p->tags : 1;
                 state->floating = 1;
         } else {
-                state->tags = c->screen ? c->screen->tags : 1;
+                c->tags = c->screen ? c->screen->tags : 1;
                 state->floating = client_is_fixed(c);
         }
 
@@ -1748,6 +1776,16 @@ static void unmap_handler(struct wl_listener *listener, void *arg)
 
         wl_list_remove(&c->link);
         wl_list_remove(&c->focus_link);
+
+        grab_cancel(c);
+
+        /*
+         * Fullscreen dies with the mapped scene: flip back to the
+         * saved normal slot so a remap starts from truth (map re-reads
+         * requested.fullscreen and re-enters through the mechanism).
+         */
+        if (state_of(c)->fullscreen)
+                c->current_state ^= 1;
 
         c->toplevel->base->surface->data = 0;
 
@@ -1792,7 +1830,7 @@ static void set_urgent(struct wlr_surface *surface)
         if (0 == c || c == current_client())
                 return;
 
-        state_of(c)->urgent = 1;
+        c->urgent = 1;
 
         if (c->screen)
                 drawbar(c->screen);
@@ -2316,10 +2354,10 @@ static void change_tag(unsigned n)
         unsigned mask = 1U << (n - 1);
         struct client *c = current_client();
 
-        if (0 == c || mask == state_of(c)->tags)
+        if (0 == c || mask == c->tags)
                 return;
 
-        state_of(c)->tags = mask;
+        c->tags = mask;
 
         arrange(current_screen);
         focus(current_client());
@@ -2423,6 +2461,23 @@ static struct wlr_box grab_box;         /* geometry at grab start */
 
 /* a button is down and the press went to a client (implicit grab) */
 static int button_held;
+
+/*
+ * Every way a grab ends funnels through here — button release (any
+ * grab, c = 0), but also the grabbed client unmapping mid-drag (its
+ * own grab only), which otherwise leaves grab_client dangling for
+ * the next motion to dereference.
+ */
+static void grab_cancel(struct client *c)
+{
+        if (GRAB_NONE == grab_mode || (c && c != grab_client))
+                return;
+
+        grab_mode = GRAB_NONE;
+        grab_client = 0;
+
+        wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+}
 
 static void grab_start(struct client *c, int mode)
 {
@@ -2596,11 +2651,7 @@ static void cursor_button_handler(struct wl_listener *unused, void *arg)
                 button_held = 0;
 
                 if (GRAB_NONE != grab_mode) {
-                        grab_mode = GRAB_NONE;
-                        grab_client = 0;
-
-                        wlr_cursor_set_xcursor(cursor, cursor_mgr,
-                                               "default");
+                        grab_cancel(0);
                         return;
                 }
         } else {
@@ -2787,6 +2838,19 @@ static void kb_modifiers_handler(struct wl_listener *listener, void *arg)
         struct keyboard *kb = wl_container_of(listener, kb, modifiers);
 
         (void)arg;
+
+        /*
+         * A modifier change invalidates the armed binding: releasing
+         * Alt with j still down must not keep walking focus at 60 Hz.
+         * dwl inherits that surprise; normal key repeat does not.
+         */
+        if (kb->repeat_nsyms &&
+            CLEANMASK(kb->repeat_mods) !=
+                    CLEANMASK(wlr_keyboard_get_modifiers(
+                            &kb->group->keyboard))) {
+                kb->repeat_nsyms = 0;
+                wl_event_source_timer_update(kb->repeat_timer, 0);
+        }
 
         wlr_seat_set_keyboard(seat, &kb->group->keyboard);
         wlr_seat_keyboard_notify_modifiers(seat,
@@ -3071,8 +3135,16 @@ static int reap_handler(int signo, void *unused)
  */
 static int status_handler(int fd, uint32_t mask, void *unused)
 {
-        char buf[256];
-        char *nl;
+        /*
+         * Reads are not records: any line-producing feeder is promised
+         * to work, and a line may arrive split across reads. The
+         * accumulator carries the partial tail; only a complete line
+         * ever reaches the bar, newest one wins.
+         */
+        static char acc[512];
+        static size_t fill;
+
+        char *nl, *line;
         ssize_t n;
 
         (void)unused;
@@ -3086,20 +3158,33 @@ static int status_handler(int fd, uint32_t mask, void *unused)
                 return 0;
         }
 
-        n = read(fd, buf, sizeof buf - 1);
+        n = read(fd, acc + fill, sizeof acc - 1 - fill);
         if (n <= 0)
                 return 0;
 
-        buf[n] = 0;
+        fill += (size_t)n;
+        acc[fill] = 0;
 
-        /* keep only the newest complete line */
-        nl = strrchr(buf, '\n');
-        if (nl) {
-                *nl = 0;
-                nl = strrchr(buf, '\n');
+        nl = strrchr(acc, '\n');
+        if (0 == nl) {
+                /* no complete line yet; a runaway one is dropped */
+                if (sizeof acc - 1 == fill)
+                        fill = 0;
+
+                return 0;
         }
 
-        snprintf(status, sizeof status, "%s", nl ? nl + 1 : buf);
+        *nl = 0;
+        line = strrchr(acc, '\n');
+        line = line ? line + 1 : acc;
+
+        /* a line longer than the bar's field truncates, deliberately */
+        snprintf(status, sizeof status, "%.*s",
+                 (int)sizeof status - 1, line);
+
+        fill -= (size_t)(nl + 1 - acc);
+        memmove(acc, nl + 1, fill);
+
         drawbars();
 
         return 0;
@@ -3111,6 +3196,15 @@ static void status_spawn(void)
 
         if (0 == statuscmd[0] || pipe(fds) < 0)
                 return;
+
+        /*
+         * Neither end may leak into spawned applications: an inherited
+         * read end keeps the feeder from ever seeing EPIPE after a
+         * compositor crash — it blocks on a full pipe instead. dup2
+         * below clears the flag on the feeder's own stdout.
+         */
+        fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC);
 
         status_pid = fork();
         if (0 == status_pid) {
