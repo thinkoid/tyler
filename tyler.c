@@ -39,11 +39,13 @@
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
 #include <wlr/util/log.h>
@@ -96,6 +98,7 @@ struct client {
         int current_state;
 
         struct wlr_xdg_toplevel *toplevel;
+        struct wlr_xdg_toplevel_decoration_v1 *decoration;
         struct wlr_scene_tree *scene;
         struct wlr_scene_tree *scene_surface;
         struct wlr_scene_rect *border[4];
@@ -106,6 +109,10 @@ struct client {
         struct wl_listener destroy;
         struct wl_listener request_fullscreen;
         struct wl_listener set_title;
+
+        /* live only while a decoration object exists */
+        struct wl_listener set_decoration_mode;
+        struct wl_listener destroy_decoration;
 };
 
 struct screen {
@@ -230,6 +237,7 @@ static struct screen_memory screen_memories[8];
 static struct wl_listener new_output_listener;
 static struct wl_listener layout_change_listener;
 static struct wl_listener new_toplevel_listener;
+static struct wl_listener new_decoration_listener;
 static struct wl_listener new_popup_listener;
 static struct wl_listener new_input_listener;
 static struct wl_listener new_vkbd_listener;
@@ -1442,6 +1450,57 @@ static void set_title_handler(struct wl_listener *listener, void *arg)
                 drawbar(c->screen);
 }
 
+/*
+ * We draw the borders; nobody draws a titlebar. Both decoration
+ * protocols are answered server-side — without this foot warns
+ * "using CSDs unconditionally" and paints its own titlebar.
+ */
+static void set_decoration_mode_handler(struct wl_listener *listener,
+                                        void *arg)
+{
+        struct client *c =
+                wl_container_of(listener, c, set_decoration_mode);
+
+        (void)arg;
+
+        /* refused before the initial commit; re-applied from there */
+        if (c->toplevel->base->initialized)
+                wlr_xdg_toplevel_decoration_v1_set_mode(
+                        c->decoration,
+                        WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
+static void destroy_decoration_handler(struct wl_listener *listener,
+                                       void *arg)
+{
+        struct client *c =
+                wl_container_of(listener, c, destroy_decoration);
+
+        (void)arg;
+
+        wl_list_remove(&c->set_decoration_mode.link);
+        wl_list_remove(&c->destroy_decoration.link);
+
+        c->decoration = 0;
+}
+
+static void new_decoration_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_xdg_toplevel_decoration_v1 *deco = arg;
+        struct client *c = deco->toplevel->base->data;
+
+        (void)unused;
+
+        c->decoration = deco;
+
+        LISTEN(&deco->events.request_mode, &c->set_decoration_mode,
+               set_decoration_mode_handler);
+        LISTEN(&deco->events.destroy, &c->destroy_decoration,
+               destroy_decoration_handler);
+
+        set_decoration_mode_handler(&c->set_decoration_mode, deco);
+}
+
 static void commit_handler(struct wl_listener *listener, void *arg)
 {
         struct client *c = wl_container_of(listener, c, commit);
@@ -1453,8 +1512,13 @@ static void commit_handler(struct wl_listener *listener, void *arg)
          * the client can map; 0x0 lets it pick a size, tiling overrides
          * at map anyway.
          */
-        if (c->toplevel->base->initial_commit)
+        if (c->toplevel->base->initial_commit) {
+                if (c->decoration)
+                        set_decoration_mode_handler(&c->set_decoration_mode,
+                                                    0);
+
                 wlr_xdg_toplevel_set_size(c->toplevel, 0, 0);
+        }
 }
 
 static void map_handler(struct wl_listener *listener, void *arg)
@@ -1479,6 +1543,16 @@ static void map_handler(struct wl_listener *listener, void *arg)
 
         wl_list_insert(&clients, &c->link);
         wl_list_insert(&fstack, &c->focus_link);
+
+        /*
+         * The tiled states, always: a terminal told it is tiled fills
+         * the box exactly and pads the cell remainder, instead of
+         * committing a smaller cell-multiple buffer that leaves the
+         * right and bottom edges unpainted.
+         */
+        wlr_xdg_toplevel_set_tiled(c->toplevel,
+                                   WLR_EDGE_TOP | WLR_EDGE_BOTTOM |
+                                           WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 
         c->screen = current_screen;     /* no outputs: a legal orphan */
 
@@ -2754,6 +2828,14 @@ static void init(void)
         LISTEN(&xdg_shell->events.new_popup, &new_popup_listener,
                new_popup_handler);
 
+        /* both decoration protocols: ours is the only chrome */
+        wlr_server_decoration_manager_set_default_mode(
+                wlr_server_decoration_manager_create(display),
+                WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+        LISTEN(&wlr_xdg_decoration_manager_v1_create(display)
+                        ->events.new_toplevel_decoration,
+               &new_decoration_listener, new_decoration_handler);
+
         LISTEN(&wlr_xdg_activation_v1_create(display)->events
                         .request_activate,
                &request_activate_listener, request_activate_handler);
@@ -2800,6 +2882,7 @@ static void fini(void)
         wl_list_remove(&new_output_listener.link);
         wl_list_remove(&layout_change_listener.link);
         wl_list_remove(&new_toplevel_listener.link);
+        wl_list_remove(&new_decoration_listener.link);
         wl_list_remove(&new_popup_listener.link);
         wl_list_remove(&new_input_listener.link);
         wl_list_remove(&new_vkbd_listener.link);
