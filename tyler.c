@@ -216,6 +216,7 @@ static struct wlr_output_layout *output_layout;
  * clients over everything. Creation order is the stacking order.
  */
 static struct wlr_scene_tree *layer_tile;
+static struct wlr_scene_tree *layer_float;  /* floats never sink under tiles */
 static struct wlr_scene_tree *layer_bar;
 static struct wlr_scene_tree *layer_fs;
 static struct wlr_scene_tree *layer_drag;   /* DnD icon, rides the cursor */
@@ -1595,8 +1596,11 @@ static void set_fullscreen(struct client *c, int on)
                 if (c->screen)
                         resize(c, c->screen->area);
         } else {
-                /* `to` is the saved normal state, untouched */
-                wlr_scene_node_reparent(&c->scene->node, layer_tile);
+                /* `to` is the saved normal state, untouched — floats
+                 * go home to their own layer, not under the tiles */
+                wlr_scene_node_reparent(&c->scene->node,
+                                        to->floating ? layer_float
+                                                     : layer_tile);
                 resize(c, to->r);
         }
 
@@ -1702,6 +1706,7 @@ static void map_handler(struct wl_listener *listener, void *arg)
 {
         struct client *c = wl_container_of(listener, c, map);
         struct state *state = state_of(c);
+        struct client *p = 0;
         size_t i;
 
         (void)arg;
@@ -1734,9 +1739,12 @@ static void map_handler(struct wl_listener *listener, void *arg)
         c->screen = current_screen;     /* no outputs: a legal orphan */
 
         if (c->toplevel->parent) {
-                struct client *p = c->toplevel->parent->base->data;
+                p = c->toplevel->parent->base->data;
 
-                /* transient: borrow the parent's tags, float */
+                /* transient: the parent's screen and tags, floated */
+                if (p)
+                        c->screen = p->screen;
+
                 c->tags = p ? p->tags : 1;
                 state->floating = 1;
         } else {
@@ -1744,18 +1752,23 @@ static void map_handler(struct wl_listener *listener, void *arg)
                 state->floating = client_is_fixed(c);
         }
 
-        /* floating clients keep their own size, centered */
+        if (state->floating)
+                wlr_scene_node_reparent(&c->scene->node, layer_float);
+
+        /*
+         * Floating clients keep their own size, centered — a transient
+         * over its parent, the rest over the working area.
+         */
         if (state->floating && c->screen) {
                 struct wlr_box g = c->toplevel->base->geometry;
+                struct wlr_box a = p ? state_of(p)->r : c->screen->warea;
                 struct wlr_box r = {
                         .width = g.width + 2 * border_width,
                         .height = g.height + 2 * border_width
                 };
 
-                r.x = c->screen->warea.x +
-                        (c->screen->warea.width - r.width) / 2;
-                r.y = c->screen->warea.y +
-                        (c->screen->warea.height - r.height) / 2;
+                r.x = a.x + (a.width - r.width) / 2;
+                r.y = a.y + (a.height - r.height) / 2;
 
                 resize(c, r);
         }
@@ -2384,6 +2397,7 @@ static void tile_current(unsigned unused)
 
         if (state->floating) {
                 state->floating = 0;
+                wlr_scene_node_reparent(&c->scene->node, layer_tile);
                 arrange(current_screen);
         }
 }
@@ -2489,6 +2503,7 @@ static void grab_start(struct client *c, int mode)
         /* dragging a tile tears it out of the tiling, dwm-style */
         if (!state->floating) {
                 state->floating = 1;
+                wlr_scene_node_reparent(&c->scene->node, layer_float);
                 arrange(c->screen);
         }
 
@@ -3274,6 +3289,7 @@ static void init(void)
         scene = wlr_scene_create();
 
         layer_tile = wlr_scene_tree_create(&scene->tree);
+        layer_float = wlr_scene_tree_create(&scene->tree);
         layer_bar = wlr_scene_tree_create(&scene->tree);
         layer_fs = wlr_scene_tree_create(&scene->tree);
         layer_drag = wlr_scene_tree_create(&scene->tree);
