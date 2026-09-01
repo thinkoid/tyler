@@ -56,6 +56,7 @@ static const struct {
         { "comma",     KEY_COMMA     },
         { "period",    KEY_DOT       },
         { "minus",     KEY_MINUS     },
+        { "print",     KEY_SYSRQ     },
 
         { "1", KEY_1 }, { "2", KEY_2 }, { "3", KEY_3 },
         { "4", KEY_4 }, { "5", KEY_5 }, { "6", KEY_6 },

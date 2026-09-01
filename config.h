@@ -73,7 +73,7 @@ static const struct key keys[] = {
         { MODKEY,   XKB_KEY_period,  focus_next_screen, 0 },
         { MODSHIFT, XKB_KEY_less,    move_prev_screen,  0 },
         { MODSHIFT, XKB_KEY_greater, move_next_screen,  0 },
-        { MODKEY,   XKB_KEY_s,       screenshot,        0 },
+        { 0,        XKB_KEY_Print,   screenshot,        0 },
         { MODKEY,   XKB_KEY_t,       tile_current,      0 },
         { MODSHIFT, XKB_KEY_Q,       quit,              0 },
 

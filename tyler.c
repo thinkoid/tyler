@@ -1852,10 +1852,16 @@ static void screenshot(unsigned unused)
         }
 
         dir = getenv("TYLER_SHOT_DIR");
-        if (0 == dir)
-                dir = getenv("HOME");
-        if (0 == dir)
-                dir = ".";
+        if (0 == dir) {
+                static char pictures[256];
+                const char *home = getenv("HOME");
+
+                snprintf(pictures, sizeof pictures, "%s/Pictures",
+                         home ? home : ".");
+                mkdir(pictures, 0755);
+
+                dir = pictures;
+        }
 
         now = time(0);
         strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", localtime(&now));
