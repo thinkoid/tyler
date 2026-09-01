@@ -62,6 +62,7 @@ static const char *const termcmd[] = { "foot", 0 };
 static const struct key keys[] = {
         { MODKEY,   XKB_KEY_Return,  zoom,              0 },
         { MODSHIFT, XKB_KEY_Return,  spawn_terminal,    0 },
+        { MODKEY,   XKB_KEY_p,       menu_open,         0 },
         { MODKEY,   XKB_KEY_b,       toggle_bar,        0 },
         { MODKEY,   XKB_KEY_j,       focus_next,        0 },
         { MODKEY,   XKB_KEY_k,       focus_prev,        0 },
@@ -72,6 +73,7 @@ static const struct key keys[] = {
         { MODKEY,   XKB_KEY_period,  focus_next_screen, 0 },
         { MODSHIFT, XKB_KEY_less,    move_prev_screen,  0 },
         { MODSHIFT, XKB_KEY_greater, move_next_screen,  0 },
+        { MODKEY,   XKB_KEY_s,       screenshot,        0 },
         { MODKEY,   XKB_KEY_t,       tile_current,      0 },
         { MODSHIFT, XKB_KEY_Q,       quit,              0 },
 

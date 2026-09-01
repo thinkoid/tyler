@@ -47,19 +47,30 @@ static const struct {
         { "ctrl",   KEY_LEFTCTRL  },
         { "super",  KEY_LEFTMETA  },
 
-        { "return", KEY_ENTER },
-        { "left",   KEY_LEFT  },
-        { "right",  KEY_RIGHT },
-        { "comma",  KEY_COMMA },
-        { "period", KEY_DOT   },
+        { "return",    KEY_ENTER     },
+        { "escape",    KEY_ESC       },
+        { "backspace", KEY_BACKSPACE },
+        { "tab",       KEY_TAB       },
+        { "left",      KEY_LEFT      },
+        { "right",     KEY_RIGHT     },
+        { "comma",     KEY_COMMA     },
+        { "period",    KEY_DOT       },
+        { "minus",     KEY_MINUS     },
 
         { "1", KEY_1 }, { "2", KEY_2 }, { "3", KEY_3 },
         { "4", KEY_4 }, { "5", KEY_5 }, { "6", KEY_6 },
         { "7", KEY_7 }, { "8", KEY_8 }, { "9", KEY_9 },
+        { "0", KEY_0 },
 
-        { "b", KEY_B }, { "c", KEY_C }, { "j", KEY_J },
-        { "k", KEY_K }, { "p", KEY_P }, { "q", KEY_Q },
-        { "s", KEY_S }, { "t", KEY_T },
+        { "a", KEY_A }, { "b", KEY_B }, { "c", KEY_C },
+        { "d", KEY_D }, { "e", KEY_E }, { "f", KEY_F },
+        { "g", KEY_G }, { "h", KEY_H }, { "i", KEY_I },
+        { "j", KEY_J }, { "k", KEY_K }, { "l", KEY_L },
+        { "m", KEY_M }, { "n", KEY_N }, { "o", KEY_O },
+        { "p", KEY_P }, { "q", KEY_Q }, { "r", KEY_R },
+        { "s", KEY_S }, { "t", KEY_T }, { "u", KEY_U },
+        { "v", KEY_V }, { "w", KEY_W }, { "x", KEY_X },
+        { "y", KEY_Y }, { "z", KEY_Z },
 };
 /* clang-format on */
 

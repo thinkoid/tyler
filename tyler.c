@@ -2,11 +2,14 @@
 
 #include <linux/input-event-codes.h>
 
+#include <dirent.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -200,6 +203,10 @@ static struct fcft_font *font;
 static char status[256];
 static struct wl_event_source *status_source;
 
+/* the menu draws in menu_screen's bar strip while active */
+static int menu_active;
+static struct screen *menu_screen;
+
 static struct wlr_xdg_shell *xdg_shell;
 
 static struct wlr_seat *seat;
@@ -249,6 +256,8 @@ static void move_next_screen(unsigned);
 static void tile_current(unsigned);
 static void view_tag(unsigned);
 static void change_tag(unsigned);
+static void menu_open(unsigned);
+static void screenshot(unsigned);
 static void quit(unsigned);
 
 /* the buttons table points at these */
@@ -470,6 +479,34 @@ static uint32_t utf8_next(const char **s)
         return cp;
 }
 
+/* the decoder's mirror; out must hold 4 bytes */
+static int utf8_encode(uint32_t cp, char *out)
+{
+        if (cp < 0x80) {
+                out[0] = (char)cp;
+                return 1;
+        }
+
+        if (cp < 0x800) {
+                out[0] = (char)(0xc0 | cp >> 6);
+                out[1] = (char)(0x80 | (cp & 0x3f));
+                return 2;
+        }
+
+        if (cp < 0x10000) {
+                out[0] = (char)(0xe0 | cp >> 12);
+                out[1] = (char)(0x80 | (cp >> 6 & 0x3f));
+                out[2] = (char)(0x80 | (cp & 0x3f));
+                return 3;
+        }
+
+        out[0] = (char)(0xf0 | cp >> 18);
+        out[1] = (char)(0x80 | (cp >> 12 & 0x3f));
+        out[2] = (char)(0x80 | (cp >> 6 & 0x3f));
+        out[3] = (char)(0x80 | (cp & 0x3f));
+        return 4;
+}
+
 /*
  * Glyphs composite through their alpha mask in the fg color; color
  * glyphs (emoji, nerd icons) blend as-is.
@@ -527,6 +564,46 @@ static int text_width(const char *utf8)
         return w;
 }
 
+/* the drawn buffer's road into the scene, dump hook included */
+static void bar_commit(struct screen *s, struct bar_buffer *buf,
+                       pixman_image_t *img)
+{
+        pixman_image_unref(img);
+
+        /* the oracle's eye: TYLER_BAR_DUMP=<dir> writes each redraw */
+        if (getenv("TYLER_BAR_DUMP")) {
+                char path[256];
+                FILE *f;
+
+                snprintf(path, sizeof path, "%s/bar-%s.ppm",
+                         getenv("TYLER_BAR_DUMP"), s->output->name);
+
+                f = fopen(path, "w");
+                if (f) {
+                        int i, n = s->area.width * s->bh;
+
+                        fprintf(f, "P6\n%d %d\n255\n", s->area.width, s->bh);
+
+                        for (i = 0; i < n; ++i) {
+                                uint32_t p = buf->data[i];
+                                unsigned char rgb[3] = { p >> 16, p >> 8,
+                                                         p };
+
+                                fwrite(rgb, 1, 3, f);
+                        }
+
+                        fclose(f);
+                }
+        }
+
+        wlr_scene_buffer_set_buffer(s->bar, &buf->base);
+        wlr_buffer_drop(&buf->base);
+
+        wlr_scene_node_set_position(&s->bar->node, s->area.x, s->area.y);
+}
+
+static void draw_menu(pixman_image_t *, struct screen *);
+
 /* the screen's top visible client — its title owns the bar */
 static struct client *focustop(struct screen *s)
 {
@@ -549,16 +626,25 @@ static void drawbar(struct screen *s)
         int i, x = 0, w = s->area.width, sel;
         char tag[2] = { 0 };
 
+        /* the menu borrows the strip even on a hidden bar */
+        int menu_here = menu_active && s == menu_screen;
+
         if (0 == s->bar)
                 return;
 
-        wlr_scene_node_set_enabled(&s->bar->node, s->showbar);
-        if (!s->showbar)
+        wlr_scene_node_set_enabled(&s->bar->node, s->showbar || menu_here);
+        if (!s->showbar && !menu_here)
                 return;
 
         buf = bar_buffer_create(w, s->bh);
         img = pixman_image_create_bits_no_clear(PIXMAN_a8r8g8b8, w, s->bh,
                                                 buf->data, 4 * w);
+
+        if (menu_here) {
+                draw_menu(img, s);
+                bar_commit(s, buf, img);
+                return;
+        }
 
         fill_rect(img, 0, 0, w, s->bh, colors[COLOR_NORMAL_BG]);
 
@@ -631,38 +717,7 @@ static void drawbar(struct screen *s)
                           colors[sel ? COLOR_SELECT_FG : COLOR_NORMAL_FG],
                           w, s->bh);
 
-        pixman_image_unref(img);
-
-        /* the oracle's eye: TYLER_BAR_DUMP=<dir> writes each redraw */
-        if (getenv("TYLER_BAR_DUMP")) {
-                char path[256];
-                FILE *f;
-
-                snprintf(path, sizeof path, "%s/bar-%s.ppm",
-                         getenv("TYLER_BAR_DUMP"), s->output->name);
-
-                f = fopen(path, "w");
-                if (f) {
-                        int n = s->area.width * s->bh;
-
-                        fprintf(f, "P6\n%d %d\n255\n", s->area.width, s->bh);
-
-                        for (i = 0; i < n; ++i) {
-                                uint32_t p = buf->data[i];
-                                unsigned char rgb[3] = { p >> 16, p >> 8,
-                                                         p };
-
-                                fwrite(rgb, 1, 3, f);
-                        }
-
-                        fclose(f);
-                }
-        }
-
-        wlr_scene_buffer_set_buffer(s->bar, &buf->base);
-        wlr_buffer_drop(&buf->base);
-
-        wlr_scene_node_set_position(&s->bar->node, s->area.x, s->area.y);
+        bar_commit(s, buf, img);
 }
 
 static void drawbars(void)
@@ -671,6 +726,274 @@ static void drawbars(void)
 
         wl_list_for_each(s, &screens, link)
                 drawbar(s);
+}
+
+/**********************************************************************/
+/* Menu                                                               */
+
+/*
+ * The integrated dmenu: no client, no grabs — the compositor owns the
+ * keyboard, so menu_active simply reroutes key events here and the
+ * drawing rides the bar path. The $PATH run-launcher, as designed.
+ */
+
+static void spawn(const char *const *);
+
+static char menu_input[256];
+
+static char **menu_items;               /* the sorted $PATH scan */
+static size_t menu_nitems;
+
+static char **menu_matches;             /* pointers into menu_items */
+static size_t menu_nmatches;
+static size_t menu_sel, menu_first;
+
+static int cmpstrp(const void *a, const void *b)
+{
+        return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void menu_scan_path(void)
+{
+        static size_t cap;
+
+        char *path, *dir, *save = 0;
+        size_t i, n = 0;
+
+        for (i = 0; i < menu_nitems; ++i)
+                free(menu_items[i]);
+        menu_nitems = 0;
+
+        path = getenv("PATH");
+        if (0 == path)
+                return;
+
+        path = strdup(path);
+
+        for (dir = strtok_r(path, ":", &save); dir;
+             dir = strtok_r(0, ":", &save)) {
+                DIR *d = opendir(dir);
+                struct dirent *e;
+
+                if (0 == d)
+                        continue;
+
+                while ((e = readdir(d))) {
+                        struct stat st;
+
+                        if (0 == strcmp(e->d_name, ".") ||
+                            0 == strcmp(e->d_name, ".."))
+                                continue;
+
+                        if (fstatat(dirfd(d), e->d_name, &st, 0) < 0 ||
+                            !S_ISREG(st.st_mode) ||
+                            faccessat(dirfd(d), e->d_name, X_OK, 0) < 0)
+                                continue;
+
+                        if (menu_nitems == cap) {
+                                cap = cap ? 2 * cap : 1024;
+                                menu_items = realloc(
+                                        menu_items,
+                                        cap * sizeof *menu_items);
+
+                                if (0 == menu_items)
+                                        die("realloc failed");
+                        }
+
+                        menu_items[menu_nitems++] = strdup(e->d_name);
+                }
+
+                closedir(d);
+        }
+
+        free(path);
+
+        qsort(menu_items, menu_nitems, sizeof *menu_items, cmpstrp);
+
+        /* $PATH dirs shadow each other; adjacent duplicates collapse */
+        for (i = 0; i < menu_nitems; ++i)
+                if (n && 0 == strcmp(menu_items[n - 1], menu_items[i]))
+                        free(menu_items[i]);
+                else
+                        menu_items[n++] = menu_items[i];
+
+        menu_nitems = n;
+
+        /* matches can never outnumber items */
+        menu_matches = realloc(menu_matches,
+                               menu_nitems * sizeof *menu_matches);
+        if (menu_nitems && 0 == menu_matches)
+                die("realloc failed");
+}
+
+/* dmenu's ranking, abridged: prefix matches, then substring matches */
+static void menu_filter(void)
+{
+        size_t i, len = strlen(menu_input);
+
+        menu_nmatches = 0;
+
+        for (i = 0; i < menu_nitems; ++i)
+                if (0 == strncmp(menu_items[i], menu_input, len))
+                        menu_matches[menu_nmatches++] = menu_items[i];
+
+        for (i = 0; i < menu_nitems; ++i)
+                if (strncmp(menu_items[i], menu_input, len) &&
+                    strstr(menu_items[i], menu_input))
+                        menu_matches[menu_nmatches++] = menu_items[i];
+
+        menu_sel = 0;
+        menu_first = 0;
+}
+
+static void draw_menu(pixman_image_t *img, struct screen *s)
+{
+        int pad = s->bh / 4;
+        int w = s->area.width, inw = w / 4;
+        size_t i;
+        int x;
+
+        fill_rect(img, 0, 0, w, s->bh, colors[COLOR_NORMAL_BG]);
+
+        /* the input field, caret at the end of the text */
+        x = draw_text(img, menu_input, pad, colors[COLOR_SELECT_FG],
+                      inw - pad, s->bh);
+        fill_rect(img, x + 1, 2, 1, s->bh - 4, colors[COLOR_SELECT_FG]);
+
+        /* page so the selection stays visible */
+        if (menu_sel < menu_first)
+                menu_first = menu_sel;
+        else if (menu_nmatches) {
+                int avail = w - inw;
+
+                for (i = menu_first; i <= menu_sel; ++i)
+                        if ((avail -= text_width(menu_matches[i]) +
+                                      2 * pad) < 0) {
+                                menu_first = menu_sel;
+                                break;
+                        }
+        }
+
+        x = inw;
+
+        for (i = menu_first; i < menu_nmatches && x < w; ++i) {
+                int tw = text_width(menu_matches[i]) + 2 * pad;
+                int sel = i == menu_sel;
+
+                fill_rect(img, x, 0, tw < w - x ? tw : w - x, s->bh,
+                          colors[sel ? COLOR_SELECT_BG : COLOR_NORMAL_BG]);
+                draw_text(img, menu_matches[i], x + pad,
+                          colors[sel ? COLOR_SELECT_FG : COLOR_NORMAL_FG],
+                          x + tw < w ? x + tw - pad : w, s->bh);
+
+                x += tw;
+        }
+}
+
+static void menu_open(unsigned unused)
+{
+        (void)unused;
+
+        if (menu_active || 0 == current_screen)
+                return;
+
+        menu_scan_path();
+
+        menu_input[0] = 0;
+        menu_filter();
+
+        menu_active = 1;
+        menu_screen = current_screen;
+
+        drawbar(menu_screen);
+}
+
+static void menu_close(void)
+{
+        struct screen *s = menu_screen;
+
+        menu_active = 0;
+        menu_screen = 0;
+
+        drawbar(s);
+}
+
+static void menu_exec(int verbatim)
+{
+        const char *cmd = !verbatim && menu_nmatches
+                                  ? menu_matches[menu_sel]
+                                  : menu_input;
+        const char *const args[] = { "sh", "-c", cmd, 0 };
+
+        if (cmd[0])
+                spawn(args);
+}
+
+/* every press is the menu's while it is up — the return says so */
+static int menu_key(uint32_t mods, xkb_keysym_t sym)
+{
+        uint32_t cp;
+        size_t n;
+
+        switch (sym) {
+        case XKB_KEY_Escape:
+                menu_close();
+                return 1;
+
+        case XKB_KEY_Return:
+        case XKB_KEY_KP_Enter:
+                /* shifted runs the input verbatim, as in dmenu */
+                menu_exec(mods & WLR_MODIFIER_SHIFT);
+                menu_close();
+                return 1;
+
+        case XKB_KEY_Left:
+                if (0 < menu_sel)
+                        --menu_sel;
+                break;
+
+        case XKB_KEY_Right:
+                if (menu_sel + 1 < menu_nmatches)
+                        ++menu_sel;
+                break;
+
+        case XKB_KEY_Tab:
+                if (menu_nmatches) {
+                        snprintf(menu_input, sizeof menu_input, "%s",
+                                 menu_matches[menu_sel]);
+                        menu_filter();
+                }
+                break;
+
+        case XKB_KEY_BackSpace:
+                n = strlen(menu_input);
+
+                while (0 < n &&
+                       0x80 == (0xc0 & (unsigned char)menu_input[--n]))
+                        ;
+
+                menu_input[n] = 0;
+                menu_filter();
+                break;
+
+        default:
+                cp = xkb_keysym_to_utf32(sym);
+
+                if (cp < 0x20 || 0x7f == cp)
+                        return 1;
+
+                n = strlen(menu_input);
+
+                if (n + 4 < sizeof menu_input) {
+                        n += utf8_encode(cp, menu_input + n);
+                        menu_input[n] = 0;
+                        menu_filter();
+                }
+                break;
+        }
+
+        drawbar(menu_screen);
+        return 1;
 }
 
 /**********************************************************************/
@@ -871,6 +1194,12 @@ static void output_destroy_handler(struct wl_listener *listener, void *arg)
         (void)arg;
 
         screen_memory_save(s);
+
+        /* the menu's screen dying takes the menu with it */
+        if (menu_screen == s) {
+                menu_active = 0;
+                menu_screen = 0;
+        }
 
         wl_list_remove(&s->frame.link);
         wl_list_remove(&s->request_state.link);
@@ -1340,6 +1669,207 @@ static void new_popup_handler(struct wl_listener *unused, void *arg)
         LISTEN(&popup->base->surface->events.commit, &p->commit,
                popup_commit_handler);
         LISTEN(&popup->events.destroy, &p->destroy, popup_destroy_handler);
+}
+
+/**********************************************************************/
+/* Screenshots                                                        */
+
+/*
+ * Internal scene->PNG, as designed: no wlr-screencopy, no external
+ * grabber. The PNG is hand-rolled with stored deflate blocks — bigger
+ * files, zero dependencies.
+ */
+
+static uint32_t crc32_of(uint32_t crc, const unsigned char *p, size_t n)
+{
+        static uint32_t table[256];
+
+        if (0 == table[1]) {
+                uint32_t i, j, c;
+
+                for (i = 0; i < 256; ++i) {
+                        for (c = i, j = 0; j < 8; ++j)
+                                c = c & 1 ? 0xedb88320 ^ c >> 1 : c >> 1;
+
+                        table[i] = c;
+                }
+        }
+
+        while (n--)
+                crc = table[(crc ^ *p++) & 0xff] ^ crc >> 8;
+
+        return crc;
+}
+
+static void png_chunk(FILE *f, const char *tag, const unsigned char *data,
+                      size_t n)
+{
+        unsigned char b[4] = { n >> 24, n >> 16, n >> 8, n };
+        uint32_t crc;
+
+        fwrite(b, 1, 4, f);
+        fwrite(tag, 1, 4, f);
+
+        if (n)
+                fwrite(data, 1, n, f);
+
+        crc = crc32_of(0xffffffff, (const unsigned char *)tag, 4);
+
+        if (n)
+                crc = crc32_of(crc, data, n);
+
+        crc ^= 0xffffffff;
+
+        b[0] = crc >> 24;
+        b[1] = crc >> 16;
+        b[2] = crc >> 8;
+        b[3] = crc;
+
+        fwrite(b, 1, 4, f);
+}
+
+static int png_write(const char *path, const uint32_t *px, int w, int h)
+{
+        /* one filter byte per row, RGB triples after */
+        size_t raw = (size_t)h * (1 + 3 * (size_t)w);
+        size_t zn = 2 + 5 * ((raw + 65534) / 65535) + raw + 4;
+        size_t i, n, left;
+
+        unsigned char *filt, *z, *p;
+        unsigned char ihdr[13] = { (unsigned)w >> 24, (unsigned)w >> 16,
+                                   (unsigned)w >> 8,  (unsigned)w,
+                                   (unsigned)h >> 24, (unsigned)h >> 16,
+                                   (unsigned)h >> 8,  (unsigned)h,
+                                   8, 2, 0, 0, 0 };
+        uint32_t a = 1, b = 0;
+        int x, y;
+        FILE *f;
+
+        filt = malloc(raw);
+        z = malloc(zn);
+        if (0 == filt || 0 == z)
+                die("malloc failed");
+
+        p = filt;
+
+        for (y = 0; y < h; ++y) {
+                *p++ = 0;
+
+                for (x = 0; x < w; ++x) {
+                        uint32_t c = px[(size_t)y * w + x];
+
+                        *p++ = c >> 16;
+                        *p++ = c >> 8;
+                        *p++ = c;
+                }
+        }
+
+        /* zlib: header, stored blocks, adler32 of the filtered bytes */
+        for (i = 0; i < raw; ++i) {
+                a = (a + filt[i]) % 65521;
+                b = (b + a) % 65521;
+        }
+
+        p = z;
+        *p++ = 0x78;
+        *p++ = 0x01;
+
+        for (left = raw; 0 < left; left -= n) {
+                n = 65535 < left ? 65535 : left;
+
+                *p++ = n == left;
+                *p++ = n;
+                *p++ = n >> 8;
+                *p++ = ~n;
+                *p++ = ~n >> 8;
+
+                memcpy(p, filt + (raw - left), n);
+                p += n;
+        }
+
+        *p++ = b >> 8;
+        *p++ = b;
+        *p++ = a >> 8;
+        *p++ = a;
+
+        f = fopen(path, "w");
+        if (f) {
+                fwrite("\x89PNG\r\n\x1a\n", 1, 8, f);
+                png_chunk(f, "IHDR", ihdr, sizeof ihdr);
+                png_chunk(f, "IDAT", z, p - z);
+                png_chunk(f, "IEND", 0, 0);
+                fclose(f);
+        }
+
+        free(filt);
+        free(z);
+
+        return 0 != f;
+}
+
+static void screenshot(unsigned unused)
+{
+        struct screen *s = current_screen;
+        struct wlr_output_state state;
+        struct wlr_texture *tex;
+        uint32_t *px;
+
+        char stamp[32], path[512];
+        const char *dir;
+        time_t now;
+
+        (void)unused;
+
+        if (0 == s)
+                return;
+
+        wlr_output_state_init(&state);
+
+        if (!wlr_scene_output_build_state(s->scene_output, &state, 0) ||
+            0 == state.buffer) {
+                wlr_output_state_finish(&state);
+                return;
+        }
+
+        tex = wlr_texture_from_buffer(renderer, state.buffer);
+        if (0 == tex) {
+                wlr_output_state_finish(&state);
+                return;
+        }
+
+        px = malloc(4 * (size_t)tex->width * tex->height);
+        if (0 == px)
+                die("malloc failed");
+
+        if (!wlr_texture_read_pixels(
+                    tex, &(struct wlr_texture_read_pixels_options){
+                                 .data = px,
+                                 .format = DRM_FORMAT_ARGB8888,
+                                 .stride = 4 * tex->width })) {
+                wlr_log(WLR_ERROR, "screenshot: pixel readback failed");
+                goto out;
+        }
+
+        dir = getenv("TYLER_SHOT_DIR");
+        if (0 == dir)
+                dir = getenv("HOME");
+        if (0 == dir)
+                dir = ".";
+
+        now = time(0);
+        strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", localtime(&now));
+        snprintf(path, sizeof path, "%s/tyler-%s-%s.png", dir, stamp,
+                 s->output->name);
+
+        if (png_write(path, px, tex->width, tex->height))
+                wlr_log(WLR_INFO, "screenshot: %s", path);
+        else
+                wlr_log(WLR_ERROR, "screenshot: writing %s failed", path);
+
+out:
+        free(px);
+        wlr_texture_destroy(tex);
+        wlr_output_state_finish(&state);
 }
 
 /**********************************************************************/
@@ -1861,6 +2391,12 @@ static int keybinding(uint32_t mods, xkb_keysym_t sym)
         return 0;
 }
 
+/* an active menu owns every key; the repeat machinery serves both */
+static int key_dispatch(uint32_t mods, xkb_keysym_t sym)
+{
+        return menu_active ? menu_key(mods, sym) : keybinding(mods, sym);
+}
+
 static void kb_key_handler(struct wl_listener *listener, void *arg)
 {
         struct keyboard *kb = wl_container_of(listener, kb, key);
@@ -1877,7 +2413,7 @@ static void kb_key_handler(struct wl_listener *listener, void *arg)
 
         if (WL_KEYBOARD_KEY_STATE_PRESSED == event->state)
                 for (i = 0; i < nsyms; ++i)
-                        handled |= keybinding(mods, syms[i]);
+                        handled |= key_dispatch(mods, syms[i]);
 
         /*
          * Held bindings repeat compositor-side — X gave classic this
@@ -1897,6 +2433,10 @@ static void kb_key_handler(struct wl_listener *listener, void *arg)
         }
 
         if (handled)
+                return;
+
+        /* releases of keys the menu swallowed stay swallowed */
+        if (menu_active)
                 return;
 
         wlr_seat_set_keyboard(seat, &kb->group->keyboard);
@@ -1926,7 +2466,7 @@ static int kb_repeat_handler(void *arg)
         wl_event_source_timer_update(kb->repeat_timer, 1000 / rate);
 
         for (i = 0; i < kb->repeat_nsyms; ++i)
-                keybinding(kb->repeat_mods, kb->repeat_syms[i]);
+                key_dispatch(kb->repeat_mods, kb->repeat_syms[i]);
 
         return 0;
 }
