@@ -2670,10 +2670,18 @@ static void cursor_button_handler(struct wl_listener *unused, void *arg)
         if (WL_POINTER_BUTTON_STATE_RELEASED == event->state) {
                 button_held = 0;
 
-                if (GRAB_NONE != grab_mode) {
+                /*
+                 * Ending a compositor grab must not eat the release.
+                 * The grab's own press was swallowed, but the seat may
+                 * have counted an earlier one — swallowing its release
+                 * leaves the seat's button ledger claiming a button
+                 * down forever (a DnD then never destroys, and the
+                 * grab-serial gate rejects every future drag). The
+                 * seat discards releases it never saw pressed, so
+                 * falling through is always safe.
+                 */
+                if (GRAB_NONE != grab_mode)
                         grab_cancel(0);
-                        return;
-                }
         } else {
                 button_held = 1;
 
@@ -2804,6 +2812,25 @@ static int key_dispatch(uint32_t mods, xkb_keysym_t sym)
             sym <= XKB_KEY_XF86Switch_VT_12) {
                 wlr_session_change_vt(session,
                                       sym - XKB_KEY_XF86Switch_VT_1 + 1);
+                return 1;
+        }
+
+        /*
+         * Escape cancels an active DnD. wlroots' drag keyboard grab
+         * swallows every key, so the source client never sees Escape
+         * and cannot cancel its own drag — and libinput's edge auto
+         * drag-lock can hold the button down indefinitely, so this is
+         * the only sure way out. Killing the source sends the client
+         * wl_data_source.cancelled (ending the grab instead would
+         * not — oracle-verified), and the drag's teardown funnels
+         * into drag_destroy_handler, restoring cursor and focus.
+         * Sourceless drags are legal; only the grab exists to end.
+         */
+        if (seat->drag && XKB_KEY_Escape == sym) {
+                if (seat->drag->source)
+                        wlr_data_source_destroy(seat->drag->source);
+                else
+                        wlr_seat_pointer_end_grab(seat);
                 return 1;
         }
 
