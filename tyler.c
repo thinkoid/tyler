@@ -744,6 +744,17 @@ static void drawbar(struct screen *s)
         if (0 == s->bar)
                 return;
 
+        /*
+         * An empty box is not a small bar, it is no bar at all: a
+         * disabled or turned-off output still sits in the screen list
+         * and still reaches the layout pass. The allocation cannot
+         * catch this for us -- calloc(0, 4) returns non-null, so a
+         * zero-width strip becomes a write off the end of a zero-byte
+         * buffer. draw_menu, whose only caller is below, inherits this.
+         */
+        if (w <= 0)
+                return;
+
         wlr_scene_node_set_enabled(&s->bar->node, s->showbar || menu_here);
         if (!s->showbar && !menu_here)
                 return;
@@ -1441,9 +1452,24 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
                 wlr_output_state_set_mode(&state,
                                           wlr_output_preferred_mode(out));
 
-        if (!wlr_output_commit_state(out, &state))
-                wlr_log(WLR_ERROR, "screen %s: initial commit failed",
-                        out->name);
+        /*
+         * Same rule as init_render above: an output that will not come
+         * up is an output we do not have. Enrolling it anyway is worse
+         * than dropping it -- wlr_output_layout_add below emits
+         * layout-change synchronously, so the layout pass would run
+         * against a screen this function has not finished building.
+         */
+        if (!wlr_output_commit_state(out, &state)) {
+                wlr_log(WLR_ERROR, "screen %s: initial commit failed, "
+                        "output rejected", out->name);
+
+                wlr_output_state_finish(&state);
+                wlr_scene_node_destroy(&s->bar->node);
+                out->data = 0;
+                free(s);
+
+                return;
+        }
 
         wlr_output_state_finish(&state);
 
