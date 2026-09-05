@@ -11,7 +11,10 @@
 # without the X server, the pipe breaks without the compositor -- so a
 # stale loop never survives into the next session.
 #
-# Assumes a typical Intel laptop: BAT0, wlan0, coretemp hwmon. Wire
+# The fleet is not one machine: Intel laptops expose coretemp and a BAT0,
+# AMD desktops expose k10temp and no battery at all. Both are discovered
+# once at startup (see below) and a field that has no source is simply
+# not drawn, rather than printing an error every five seconds. Wire
 # ~/.local/bin/tyler-status as a symlink here; the repo is the truth.
 
 # Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
@@ -24,6 +27,7 @@ I_B4=$(printf '\357\211\200') I_B3=$(printf '\357\211\201')
 I_B2=$(printf '\357\211\202') I_B1=$(printf '\357\211\203')
 I_B0=$(printf '\357\211\204')
 I_CHG=$(printf '\357\203\247')
+DEG=$(printf '\302\260')
 
 out=xprop
 [ "$1" = "-o" ] && out=stdout
@@ -39,6 +43,27 @@ if [ stdout = "$out" ]; then
 fi
 
 prev_total=0 prev_idle=0
+
+# Hardware discovery, once: none of this changes while the session runs,
+# and probing it every cycle would only multiply the failure. An empty
+# variable is the signal that the field has no source on this machine --
+# the printf at the bottom drops the segment entirely rather than drawing
+# a placeholder for a sensor that does not exist.
+#
+# coretemp keeps a fixed platform path; k10temp does not, so fall back to
+# walking the hwmon class and matching on name.
+temp_input=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+if [ -z "$temp_input" ]; then
+    for h in /sys/class/hwmon/hwmon*; do
+        case $(cat "$h/name" 2>/dev/null) in
+            coretemp|k10temp) temp_input="$h/temp1_input"; break ;;
+        esac
+    done
+fi
+[ -r "$temp_input" ] || temp_input=
+
+battery=/sys/class/power_supply/BAT0
+[ -r "$battery/capacity" ] || battery=
 
 # Busy% between two /proc/stat samples (the sleep is the sample gap, so
 # the first line after startup reads 100% for an instant and settles).
@@ -59,22 +84,28 @@ cpu_pct() {
 while :; do
     cpu=$(cpu_pct)
 
-    temp=$(($(cat /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input) / 1000))
-
-    cap=$(cat /sys/class/power_supply/BAT0/capacity)
-    if   [ "$cap" -ge 90 ]; then bicon=$I_B4
-    elif [ "$cap" -ge 65 ]; then bicon=$I_B3
-    elif [ "$cap" -ge 40 ]; then bicon=$I_B2
-    elif [ "$cap" -ge 15 ]; then bicon=$I_B1
-    else                         bicon=$I_B0
+    tmp=
+    if [ -n "$temp_input" ]; then
+        tmp="${C_TMP}${I_TMP}${NRM}  $(($(cat "$temp_input") / 1000))${DEG}C"
     fi
-    cbat=$C_BAT
-    [ "$cap" -lt 15 ] && cbat=$C_RED
 
-    case $(cat /sys/class/power_supply/BAT0/status) in
-        Charging) bat="${C_CHG}${I_CHG}${NRM}  ${cap}%" ;;
-        *)        bat="${cbat}${bicon}${NRM}  ${cap}%" ;;
-    esac
+    bat=
+    if [ -n "$battery" ]; then
+        cap=$(cat "$battery/capacity")
+        if   [ "$cap" -ge 90 ]; then bicon=$I_B4
+        elif [ "$cap" -ge 65 ]; then bicon=$I_B3
+        elif [ "$cap" -ge 40 ]; then bicon=$I_B2
+        elif [ "$cap" -ge 15 ]; then bicon=$I_B1
+        else                         bicon=$I_B0
+        fi
+        cbat=$C_BAT
+        [ "$cap" -lt 15 ] && cbat=$C_RED
+
+        case $(cat "$battery/status") in
+            Charging) bat="${C_CHG}${I_CHG}${NRM}  ${cap}%" ;;
+            *)        bat="${cbat}${bicon}${NRM}  ${cap}%" ;;
+        esac
+    fi
 
     # iw, not iwgetid: wireless_tools is not installed fleet-wide, iw is.
     ssid=$(iw dev wlan0 info 2>/dev/null |
@@ -93,9 +124,11 @@ while :; do
         [ "$vol" = "${C_VOL}${I_VOL}${NRM}  " ] && vol="${C_VOL}${I_VOL}${NRM}  ?"
     fi
 
-    line=$(printf '%s  %s  %s  %s%%  %s  %s\302\260C  %s  %s' \
+    # A field with no source on this machine contributes nothing, not even
+    # its separator -- hence the ${x:+  $x} rather than a bare "$x".
+    line=$(printf '%s  %s  %s  %s%%%s%s  %s' \
               "$vol" "$net" "${C_CPU}${I_CPU}${NRM}" "$cpu" \
-              "${C_TMP}${I_TMP}${NRM}" "$temp" "$bat" \
+              "${tmp:+  $tmp}" "${bat:+  $bat}" \
               "$(date '+%a %b %e %H:%M %Y')")
 
     if [ stdout = "$out" ]; then
