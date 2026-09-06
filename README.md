@@ -105,10 +105,9 @@ Coming soon.
 Provenance
 ----------
 
-Designed and built in about three hours of working time, from empty
-repository to daily driver. The overwhelming majority of the code was
-written by Claude
-(Anthropic), with design direction, taste, and live-hardware verdicts from a
-human who mostly rode along; the commit trailers carry the flags of the crew.
+Built from an empty repository to a daily driver. The overwhelming majority
+of the code was written by Claude (Anthropic), with design direction, taste,
+and live-hardware verdicts from a human; the commit trailers carry the flags
+of the crew.
 
 License: WTFPL.
