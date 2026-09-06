@@ -1409,6 +1409,67 @@ static void output_destroy_handler(struct wl_listener *listener, void *arg)
         focus(current_client());
 }
 
+/*
+ * A refused first commit is not proof the output is dead. One machine
+ * in this fleet refuses it routinely on its INTERNAL panel -- its only
+ * display -- six times over five days, at startup and across
+ * suspend/resume, and comes up fine every time: before outputs were
+ * rejected at all, enrolment simply continued and wlroots' per-frame
+ * retry carried it. Rejecting on the first refusal would leave that
+ * machine with no screen at all. So try again before writing an output
+ * off.
+ *
+ * Two retries, and deliberately no more. Every refusal seen so far is
+ * one of two kinds. The transient kind -- the above, and "Device or
+ * resource busy" -- clears inside a frame. The structural kind does not
+ * clear at all: refusing a second 4K head because the gen9 display data
+ * buffer cannot be split into two halves that both meet their
+ * watermark is a hardware ceiling, and no amount of waiting turns 892
+ * blocks into 964. Nothing has ever been observed between those two, so
+ * a longer backoff would be a guess with a price attached -- this runs
+ * inside the handler and the whole compositor stalls for its duration.
+ *
+ * The log names the attempt that carried it, which is what classifies
+ * the next occurrence as transient or structural without having to
+ * instrument anything.
+ */
+static int commit_initial_state(struct wlr_output *out,
+                                const struct wlr_output_state *state)
+{
+        static const long backoff_ms[] = { 0, 50 };
+
+        struct timespec ts;
+        long waited = 0;
+        size_t i;
+
+        if (wlr_output_commit_state(out, state))
+                return 1;
+
+        for (i = 0; i < sizeof backoff_ms / sizeof *backoff_ms; ++i) {
+                if (backoff_ms[i]) {
+                        ts.tv_sec  = 0;
+                        ts.tv_nsec = backoff_ms[i] * 1000000L;
+
+                        nanosleep(&ts, 0);
+                        waited += backoff_ms[i];
+                }
+
+                if (wlr_output_commit_state(out, state)) {
+                        wlr_log(WLR_INFO, "screen %s: initial commit "
+                                "accepted on attempt %zu, %ld ms after "
+                                "the first refusal", out->name, i + 2,
+                                waited);
+                        return 1;
+                }
+
+                wlr_log(WLR_ERROR, "screen %s: initial commit refused "
+                        "again on attempt %zu, %ld ms in", out->name,
+                        i + 2, waited);
+        }
+
+        return 0;
+}
+
 static void new_output_handler(struct wl_listener *unused, void *arg)
 {
         struct wlr_output *out = arg;
@@ -1453,13 +1514,14 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
                                           wlr_output_preferred_mode(out));
 
         /*
-         * Same rule as init_render above: an output that will not come
-         * up is an output we do not have. Enrolling it anyway is worse
-         * than dropping it -- wlr_output_layout_add below emits
+         * Same rule as init_render above, but only once the connector
+         * has had its chances: an output that will not come up is an
+         * output we do not have. Enrolling it anyway is worse than
+         * dropping it -- wlr_output_layout_add below emits
          * layout-change synchronously, so the layout pass would run
          * against a screen this function has not finished building.
          */
-        if (!wlr_output_commit_state(out, &state)) {
+        if (!commit_initial_state(out, &state)) {
                 wlr_log(WLR_ERROR, "screen %s: initial commit failed, "
                         "output rejected", out->name);
 
