@@ -32,10 +32,10 @@ xdg_shell_h = custom_target(
         output : 'xdg-shell-protocol.h',
         command : [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'])
 
-executable('tyler', ['tyler.c', xdg_shell_h],
-           dependencies : [wlroots, wayland_server, xkbcommon,
-                           fcft, pixman, libdrm, libinput],
-           install : true)
+tyler_exe = executable('tyler', ['tyler.c', xdg_shell_h],
+                       dependencies : [wlroots, wayland_server, xkbcommon,
+                                       fcft, pixman, libdrm, libinput],
+                       install : true)
 
 # The status feeder config.h names by PATH; without it an installed
 # compositor shows an empty status field.
@@ -81,3 +81,19 @@ vp_glue_c = custom_target(
 executable('vptr', ['tools/vptr.c', vp_client_h, vp_glue_c],
            dependencies : [wayland_client],
            install : false)
+
+# Oracles. Headless, so they need no display, no GPU and no seat, and
+# run anywhere the compositor builds.
+#
+# Two outputs is not redundant with one: the single-output quit is clean
+# even with the fini() ordering bug present, because the last output
+# leaves a null survivor and arrange() returns before it can draw. One
+# alone would be a gate that never bites.
+teardown_oracle = files('tests/teardown-oracle.sh')
+
+foreach n : ['1', '2', '3']
+        test('teardown-' + n + '-outputs',
+             teardown_oracle,
+             args : [tyler_exe, n],
+             timeout : 60)
+endforeach

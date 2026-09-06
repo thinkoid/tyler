@@ -83,6 +83,20 @@ from `WAYLAND_DEBUG` traces, bar pixels dumped via `TYLER_BAR_DUMP`, and
 screenshots via the internal PNG path. Most features landed with an oracle
 run proving them before they ever touched real hardware.
 
+Some of those oracles are now wired into the build:
+
+    meson test -C build
+
+`tests/teardown-oracle.sh` gates the shutdown path — a clean quit with N
+outputs up must exit 0 — and runs at one, two and three outputs. Two is the
+one that matters: a single-output quit stays clean even when the teardown
+ordering is wrong, because the last output leaves no surviving screen to
+draw, so a one-output gate never bites. That blindness is how a segfault on
+every multi-monitor quit went unnoticed on single-display machines.
+
+New oracles belong here. Perturb the subject and watch the gate go red
+before trusting it.
+
 Pictures
 --------
 
