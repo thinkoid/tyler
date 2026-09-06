@@ -3552,15 +3552,23 @@ static void fini(void)
         for (size_t i = 0; i < 3; ++i)
                 wl_event_source_remove(signal_sources[i]);
 
-        fcft_destroy(font);
-        fcft_fini();
-
         /*
          * Reverse order, with one local constraint on top of tinywl's
          * recipe: the backend goes before the scene, because output
          * death runs our handlers and they touch scene state (bars);
          * the scene goes before the renderer, whose buffers it holds.
          * Exit would mask the leaks; the sanitizer does not.
+         *
+         * The font is scene state too, by the same argument, and so it
+         * outlives all of them. wlr_backend_destroy emits destroy on
+         * every output; output_destroy_handler repacks the layout and
+         * arranges the SURVIVING screen, and drawing that screen's bar
+         * rasterizes glyphs. Tearing the font down first left that path
+         * calling into a dead fcft -- a segfault on every clean quit
+         * with two or more outputs up, and none with one, because the
+         * last output leaves a null survivor and arrange() returns on
+         * it. The comment above already made this argument; it simply
+         * did not carry it as far as the font.
          */
         wlr_backend_destroy(backend);
         wlr_scene_node_destroy(&scene->tree.node);
@@ -3568,6 +3576,10 @@ static void fini(void)
         wlr_xcursor_manager_destroy(cursor_mgr);
         wlr_allocator_destroy(allocator);
         wlr_renderer_destroy(renderer);
+
+        fcft_destroy(font);
+        fcft_fini();
+
         wl_display_destroy(display);
 }
 
