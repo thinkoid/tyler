@@ -2853,16 +2853,17 @@ static void cursor_init(void)
                 die("wlr_xcursor_manager_create failed");
 
         /*
-         * Clients draw their own pointer and read the theme out of the
-         * environment; without this they each pick their own default and
-         * the image changes shape at every window edge. Every client
-         * spawn() starts inherits this. (The status feeder is already
-         * running by now, and draws no pointer.)
+         * A theme compiled in here is invisible to clients, which draw
+         * their own pointer out of the environment -- so tell them, or
+         * the image changes shape at every window edge. config.h naming
+         * nothing means we touch nothing: the environment is the
+         * machine's, not ours to overwrite.
          */
-        if (0 != cursor_theme)
+        if (0 != cursor_theme) {
+                snprintf(size, sizeof size, "%d", cursor_size);
                 setenv("XCURSOR_THEME", cursor_theme, 1);
-        snprintf(size, sizeof size, "%d", cursor_size);
-        setenv("XCURSOR_SIZE", size, 1);
+                setenv("XCURSOR_SIZE", size, 1);
+        }
 
         LISTEN(&cursor->events.motion, &cursor_motion_listener,
                cursor_motion_handler);

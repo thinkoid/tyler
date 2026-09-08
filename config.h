@@ -29,10 +29,12 @@ static const float master_ratio = 0.5f;
 static const int showbar = 1;
 
 /*
- * One string feeds the bar (and later the menu). The nerd-patched
- * Iosevka, as in classic; the bar height derives from it.
+ * One string feeds the bar (and later the menu); the bar height derives
+ * from it. The family is the fontconfig alias, not a font: naming one
+ * here puts a taste in every install. Change it and rebuild if yours
+ * differs.
  */
-static const char *fontname = "IosevkaTerm Nerd Font:style=Light:size=28";
+static const char *fontname = "monospace:size=28";
 
 /*
  * The status feeder: spawned by the compositor, one line on stdout per
@@ -63,17 +65,15 @@ static const enum libinput_config_accel_profile accel_profile =
 static const double accel_speed = 0.5; /* [-1, 1] */
 
 /*
- * The pointer image: an Xcursor theme name libxcursor can find (~/.icons,
- * /usr/share/icons), or 0 for the system default — which on Arch is
- * default-cursors' one-line redirect to Adwaita. retrosmart comes from
- * the AUR package xcursor-retrosmart and must be installed on every
- * machine; a missing theme is not fatal, the pointer just falls back.
- *
- * It ships nominal 32 and 36 only, so any other size rounds to one of
- * those — say 32 rather than let a stray number pick for us.
+ * The pointer. 0 is the system default theme, which is the machine's
+ * business and not ours to have an opinion about. Name a theme here --
+ * one libxcursor can find, under ~/.icons or /usr/share/icons -- and
+ * tyler hands it to clients too, so the image does not change shape at
+ * a window edge. Sizes are per theme; libxcursor rounds to the nearest
+ * one shipped.
  */
-static const char *cursor_theme = "retrosmart-xcursor-white-shadow";
-static const int cursor_size    = 32;
+static const char *cursor_theme = 0;
+static const int cursor_size    = 24;
 
 static const char *const termcmd[] = { "foot", 0 };
 
