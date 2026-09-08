@@ -2841,14 +2841,28 @@ static void new_vptr_handler(struct wl_listener *unused, void *arg)
 
 static void cursor_init(void)
 {
+        char size[16];
+
         cursor = wlr_cursor_create();
         if (0 == cursor)
                 die("wlr_cursor_create failed");
         wlr_cursor_attach_output_layout(cursor, output_layout);
 
-        cursor_mgr = wlr_xcursor_manager_create(0, 24);
+        cursor_mgr = wlr_xcursor_manager_create(cursor_theme, cursor_size);
         if (0 == cursor_mgr)
                 die("wlr_xcursor_manager_create failed");
+
+        /*
+         * Clients draw their own pointer and read the theme out of the
+         * environment; without this they each pick their own default and
+         * the image changes shape at every window edge. Every client
+         * spawn() starts inherits this. (The status feeder is already
+         * running by now, and draws no pointer.)
+         */
+        if (0 != cursor_theme)
+                setenv("XCURSOR_THEME", cursor_theme, 1);
+        snprintf(size, sizeof size, "%d", cursor_size);
+        setenv("XCURSOR_SIZE", size, 1);
 
         LISTEN(&cursor->events.motion, &cursor_motion_listener,
                cursor_motion_handler);

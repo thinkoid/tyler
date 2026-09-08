@@ -62,6 +62,19 @@ static const enum libinput_config_accel_profile accel_profile =
         LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
 static const double accel_speed = 0.5; /* [-1, 1] */
 
+/*
+ * The pointer image: an Xcursor theme name libxcursor can find (~/.icons,
+ * /usr/share/icons), or 0 for the system default — which on Arch is
+ * default-cursors' one-line redirect to Adwaita. retrosmart comes from
+ * the AUR package xcursor-retrosmart and must be installed on every
+ * machine; a missing theme is not fatal, the pointer just falls back.
+ *
+ * It ships nominal 32 and 36 only, so any other size rounds to one of
+ * those — say 32 rather than let a stray number pick for us.
+ */
+static const char *cursor_theme = "retrosmart-xcursor-white-shadow";
+static const int cursor_size    = 32;
+
 static const char *const termcmd[] = { "foot", 0 };
 
 /* the XF86 media rows: pactl and light, the tools this fleet has */
