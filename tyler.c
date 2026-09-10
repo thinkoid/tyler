@@ -33,10 +33,12 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_drm.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_keyboard_group.h>
+#include <wlr/types/wlr_linux_dmabuf_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
@@ -3429,6 +3431,21 @@ static void init(void)
         scene = wlr_scene_create();
         if (0 == scene)
                 die("wlr_scene_create failed");
+
+        /*
+         * Without linux-dmabuf every client is shm-only: Mesa and
+         * NVIDIA alike give up on the Wayland EGL platform and Firefox
+         * lands on llvmpipe. Advertise it whenever the renderer can
+         * import a dma-buf, plus legacy wl_drm for the clients that
+         * still look for it; the scene owns the per-surface feedback.
+         */
+        if (wlr_renderer_get_texture_formats(renderer, WLR_BUFFER_CAP_DMABUF)) {
+                wlr_drm_create(display, renderer);
+                wlr_scene_set_linux_dmabuf_v1(
+                        scene,
+                        wlr_linux_dmabuf_v1_create_with_renderer(
+                                display, 5, renderer));
+        }
 
         layer_tile = wlr_scene_tree_create(&scene->tree);
         layer_float = wlr_scene_tree_create(&scene->tree);
