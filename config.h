@@ -105,6 +105,7 @@ static const struct key keys[] = {
         { MODKEY,   XKB_KEY_b,       toggle_bar,        0 },
         { MODKEY,   XKB_KEY_j,       focus_next,        0 },
         { MODKEY,   XKB_KEY_k,       focus_prev,        0 },
+        { MODKEY,   XKB_KEY_Tab,     focus_last,        0 },
         { MODSHIFT, XKB_KEY_Right,   focus_next,        0 },  /* classic */
         { MODSHIFT, XKB_KEY_Left,    focus_prev,        0 },  /* classic */
         { MODSHIFT, XKB_KEY_C,       zap,               0 },

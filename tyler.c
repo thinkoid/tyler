@@ -281,6 +281,7 @@ static void brightness_down(unsigned);
 static void toggle_bar(unsigned);
 static void focus_next(unsigned);
 static void focus_prev(unsigned);
+static void focus_last(unsigned);
 static void zap(unsigned);
 static void focus_prev_screen(unsigned);
 static void focus_next_screen(unsigned);
@@ -2442,6 +2443,37 @@ static void focus_prev(unsigned unused)
 
         if (c && c != cur)
                 focus(c);
+}
+
+/*
+ * Back to the window that had focus before this one, wherever it
+ * went: the MRU stack is global, so the target may sit on another
+ * screen or behind a hidden tag. focus() follows it across screens
+ * on its own; a hidden tag must be viewed first, or the very next
+ * current_client() would disown it. Two presses land where you
+ * started -- the stack top and its runner-up trade places.
+ */
+static void focus_last(unsigned unused)
+{
+        struct client *cur = current_client(), *c = 0, *it;
+
+        (void)unused;
+
+        wl_list_for_each(it, &fstack, focus_link)
+                if (it != cur && it->screen) {
+                        c = it;
+                        break;
+                }
+
+        if (0 == c)
+                return;
+
+        if (0 == (c->tags & c->screen->tags)) {
+                c->screen->tags = c->tags;
+                arrange(c->screen);
+        }
+
+        focus(c);
 }
 
 static void view_tag(unsigned n)
