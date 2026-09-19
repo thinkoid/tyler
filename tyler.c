@@ -54,6 +54,7 @@
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
 #include <wlr/util/log.h>
@@ -3496,6 +3497,18 @@ static void init(void)
 
         output_layout = wlr_output_layout_create(display);
         scene_layout = wlr_scene_attach_output_layout(scene, output_layout);
+
+        /*
+         * Publish that layout to clients. Without this the row packed
+         * by layout_arrange is ours alone: every wl_output still
+         * advertises position 0,0, so a client is told the screens sit
+         * on top of one another. Moving windows between them is
+         * unaffected -- that is our geometry, not theirs -- but a
+         * client cannot tell the outputs apart, which bites hardest
+         * where they differ, as a 252 DPI panel does beside a 163 DPI
+         * monitor.
+         */
+        wlr_xdg_output_manager_v1_create(display, output_layout);
 
         wl_list_init(&screens);
         wl_list_init(&clients);
