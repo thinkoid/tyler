@@ -12,10 +12,12 @@
 # stale loop never survives into the next session.
 #
 # The fleet is not one machine: Intel laptops expose coretemp and a BAT0,
-# AMD desktops expose k10temp and no battery at all. Both are discovered
-# once at startup (see below) and a field that has no source is simply
-# not drawn, rather than printing an error every five seconds. Wire
-# ~/.local/bin/tyler-status as a symlink here; the repo is the truth.
+# AMD desktops expose k10temp and no battery at all, and the Snapdragon
+# laptop a battery under another name with no percentage file. All of
+# it is discovered once at startup (see below) and a field that has no
+# source is simply not drawn, rather than printing an error every five
+# seconds. Wire ~/.local/bin/tyler-status as a symlink here; the repo
+# is the truth.
 
 # Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
 # wifi, cpu chip, thermometer, battery ladder full->empty, bolt.
@@ -62,8 +64,43 @@ if [ -z "$temp_input" ]; then
 fi
 [ -r "$temp_input" ] || temp_input=
 
-battery=/sys/class/power_supply/BAT0
-[ -r "$battery/capacity" ] || battery=
+# The battery's name is not fixed either -- BAT0 under ACPI, qcom-battmgr-bat
+# on the Snapdragon laptop -- so match on type. A peripheral's battery (a
+# Bluetooth keyboard's, via HID) is type Battery too but announces
+# scope=Device; skip those. Nor is the percentage guaranteed: qcom_battmgr's
+# X1E80100 property table omits capacity, so fall back to energy_now over
+# energy_full (or the charge pair), which is how the ACPI driver produces
+# capacity in the first place. bat_src names the file pair the percentage
+# comes from.
+battery= bat_src=
+for p in /sys/class/power_supply/*; do
+    [ "$(cat "$p/type" 2>/dev/null)" = Battery ] || continue
+    [ "$(cat "$p/scope" 2>/dev/null)" = Device ] && continue
+    if   [ -r "$p/capacity" ];                            then bat_src=capacity
+    elif [ -r "$p/energy_now" ] && [ -r "$p/energy_full" ]; then bat_src=energy
+    elif [ -r "$p/charge_now" ] && [ -r "$p/charge_full" ]; then bat_src=charge
+    else continue
+    fi
+    battery=$p
+    break
+done
+
+# Percentage, or nothing when the driver has no answer this cycle (the
+# firmware-backed ones return ENODATA before the service is up). The
+# divisor is scaled down first: 100 * energy_now overflows 32 bits on a
+# 55 Wh pack, and the shell's arithmetic width is not something to lean on.
+bat_pct() {
+    if [ capacity = "$bat_src" ]; then
+        cat "$battery/capacity" 2>/dev/null
+        return
+    fi
+    now=$(cat "$battery/${bat_src}_now" 2>/dev/null) || return
+    full=$(cat "$battery/${bat_src}_full" 2>/dev/null) || return
+    [ "${full:-0}" -gt 0 ] || return
+    pct=$((now / (full / 100)))
+    [ "$pct" -gt 100 ] && pct=100
+    echo "$pct"
+}
 
 # Busy% between two /proc/stat samples (the sleep is the sample gap, so
 # the first line after startup reads 100% for an instant and settles).
@@ -90,8 +127,9 @@ while :; do
     fi
 
     bat=
-    if [ -n "$battery" ]; then
-        cap=$(cat "$battery/capacity")
+    cap=
+    [ -n "$battery" ] && cap=$(bat_pct)
+    if [ -n "$cap" ]; then
         if   [ "$cap" -ge 90 ]; then bicon=$I_B4
         elif [ "$cap" -ge 65 ]; then bicon=$I_B3
         elif [ "$cap" -ge 40 ]; then bicon=$I_B2
