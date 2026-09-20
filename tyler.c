@@ -204,6 +204,7 @@ static struct wlr_session *session;
 static struct wlr_backend *backend;
 static struct wlr_renderer *renderer;
 static struct wlr_allocator *allocator;
+static int renderer_lost;       /* the GPU went away under us: exit 1 */
 
 static struct wlr_scene *scene;
 static struct wlr_scene_output_layout *scene_layout;
@@ -270,6 +271,7 @@ static struct wl_listener start_drag_listener;
 static struct wl_listener drag_destroy_listener;
 static struct wl_listener request_activate_listener;
 static struct wl_listener bell_ring_listener;
+static struct wl_listener renderer_lost_listener;
 
 /* the key table in config.h points at these */
 static void zoom(unsigned);
@@ -3306,6 +3308,27 @@ static int terminate_handler(int signo, void *unused)
         return 0;
 }
 
+/*
+ * The renderer's lost signal means the GPU was reset under us. wlroots'
+ * advice is to build a new renderer, but every texture in the scene,
+ * the bars, the cursor theme and each output's render state hang off
+ * this one, and rebuilding all of that is a second compositor. Without
+ * this handler the session runs blind on a dead GL context -- one
+ * GL_CONTEXT_LOST line per frame, input still working, nothing drawn --
+ * until someone finds the quit binding, and the shim then records
+ * exit=0 as if nothing had happened (armok, 2026-09-20). Exit instead,
+ * under a named reason, so the shim's exit line says what went wrong.
+ */
+static void renderer_lost_handler(struct wl_listener *unused, void *arg)
+{
+        (void)unused;
+        (void)arg;
+
+        wlr_log(WLR_ERROR, "renderer lost (GPU reset), exiting");
+        renderer_lost = 1;
+        wl_display_terminate(display);
+}
+
 static int reap_handler(int signo, void *unused)
 {
         (void)signo;
@@ -3436,6 +3459,8 @@ static void init(void)
         renderer = wlr_renderer_autocreate(backend);
         if (0 == renderer)
                 die("wlr_renderer_autocreate failed");
+        LISTEN(&renderer->events.lost, &renderer_lost_listener,
+               renderer_lost_handler);
 
         /* without this, no buffer-bearing client can attach */
         if (!wlr_renderer_init_wl_shm(renderer, display))
@@ -3619,6 +3644,7 @@ static void fini(void)
         wl_list_remove(&request_primary_selection_listener.link);
         wl_list_remove(&request_activate_listener.link);
         wl_list_remove(&bell_ring_listener.link);
+        wl_list_remove(&renderer_lost_listener.link);
 
         keyboard_destroy(kb_main);
         xkb_keymap_unref(keymap);
@@ -3668,5 +3694,5 @@ int main(void)
         run();
         fini();
 
-        return 0;
+        return renderer_lost ? EXIT_FAILURE : EXIT_SUCCESS;
 }
