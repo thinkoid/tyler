@@ -53,7 +53,11 @@ prev_total=0 prev_idle=0
 # a placeholder for a sensor that does not exist.
 #
 # coretemp keeps a fixed platform path; k10temp does not, so fall back to
-# walking the hwmon class and matching on name.
+# walking the hwmon class and matching on name. The Snapdragon laptop has
+# neither: its sensors are thermal zones, two per core, typed
+# cpuN-M-top-thermal and cpuN-M-btm-thermal, and the number worth showing
+# is the hottest of them. temp_input names one file; temp_zones names a
+# set, read as a max each cycle. At most one of the two is set.
 temp_input=$(ls /sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
 if [ -z "$temp_input" ]; then
     for h in /sys/class/hwmon/hwmon*; do
@@ -63,6 +67,23 @@ if [ -z "$temp_input" ]; then
     done
 fi
 [ -r "$temp_input" ] || temp_input=
+temp_zones=
+if [ -z "$temp_input" ]; then
+    for z in /sys/class/thermal/thermal_zone*; do
+        case $(cat "$z/type" 2>/dev/null) in
+            cpu*-thermal) temp_zones="$temp_zones $z/temp" ;;
+        esac
+    done
+fi
+
+# Millidegrees: the one file, or the hottest of the zone set.
+temp_read() {
+    if [ -n "$temp_input" ]; then
+        cat "$temp_input"
+    else
+        cat $temp_zones 2>/dev/null | sort -n | tail -1
+    fi
+}
 
 # The battery's name is not fixed either -- BAT0 under ACPI, qcom-battmgr-bat
 # on the Snapdragon laptop -- so match on type. A peripheral's battery (a
@@ -122,8 +143,9 @@ while :; do
     cpu=$(cpu_pct)
 
     tmp=
-    if [ -n "$temp_input" ]; then
-        tmp="${C_TMP}${I_TMP}${NRM}  $(($(cat "$temp_input") / 1000))${DEG}C"
+    if [ -n "$temp_input$temp_zones" ]; then
+        t=$(temp_read)
+        [ -n "$t" ] && tmp="${C_TMP}${I_TMP}${NRM}  $((t / 1000))${DEG}C"
     fi
 
     bat=
