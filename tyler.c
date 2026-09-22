@@ -2558,19 +2558,64 @@ static void focus_prev_screen(unsigned unused)
 }
 
 /*
+ * A float's box, carried from one working area to another: the same
+ * offset from the corner, then held inside the destination so a
+ * smaller panel cannot lose it. A tile needs none of this — tile()
+ * hands it fresh geometry — and dwl only clamps; the translation is
+ * what makes the move read as a move.
+ */
+static struct wlr_box rehome(struct wlr_box r, const struct wlr_box *from,
+                             const struct wlr_box *to)
+{
+        r.x = to->x + (r.x - from->x);
+        r.y = to->y + (r.y - from->y);
+
+        if (r.x + r.width > to->x + to->width)
+                r.x = to->x + to->width - r.width;
+        if (r.y + r.height > to->y + to->height)
+                r.y = to->y + to->height - r.height;
+        if (r.x < to->x)
+                r.x = to->x;
+        if (r.y < to->y)
+                r.y = to->y;
+
+        return r;
+}
+
+/*
  * As in classic: the client keeps its tags, focus stays on this
  * screen, and the mover sits atop the target's focus stack — it
  * becomes current the moment you look over there.
+ *
+ * The owner and the box move together. A float whose box stayed
+ * behind was a window painted on one screen and accounted to another:
+ * over every tag view on the source, unreachable by the focus walk
+ * there, and zap closed whatever sat beneath it. A fullscreen client
+ * refits to the new screen's area, and its saved normal state comes
+ * along so leaving fullscreen lands on the same screen.
  */
 static void move_other_screen(struct screen *s)
 {
         struct client *c = current_client();
         struct screen *old = current_screen;
+        struct state *state;
 
         if (0 == c || 0 == s)
                 return;
 
         c->screen = s;
+        state = state_of(c);
+
+        if (state->fullscreen) {
+                struct state *saved = &c->state[c->current_state ^ 1];
+
+                if (saved->floating)
+                        saved->r = rehome(saved->r, &old->warea, &s->warea);
+
+                resize(c, s->area);
+        } else if (state->floating) {
+                resize(c, rehome(state->r, &old->warea, &s->warea));
+        }
 
         arrange(old);
         arrange(s);
@@ -2621,6 +2666,31 @@ static void grab_cancel(struct client *c)
         grab_client = 0;
 
         wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+}
+
+/*
+ * A float dragged onto another screen lands there: the screen under
+ * the cursor takes it, as in dwl. Focus is already on it and the box
+ * is wherever the hand left it, so only the owner changes — and the
+ * current screen with it, since a grab in flight skips the
+ * output-crossing rule in process_motion.
+ */
+static void grab_drop(struct client *c)
+{
+        struct wlr_output *out = wlr_output_layout_output_at(output_layout,
+                                                             cursor->x,
+                                                             cursor->y);
+        struct screen *s = out ? out->data : 0, *old = c->screen;
+
+        if (0 == s || s == old)
+                return;
+
+        c->screen = s;
+        current_screen = s;
+
+        arrange(old);
+        arrange(s);
+        drawbars();
 }
 
 static void grab_start(struct client *c, int mode)
@@ -2805,6 +2875,8 @@ static void cursor_button_handler(struct wl_listener *unused, void *arg)
                  * seat discards releases it never saw pressed, so
                  * falling through is always safe.
                  */
+                if (GRAB_MOVE == grab_mode)
+                        grab_drop(grab_client);
                 if (GRAB_NONE != grab_mode)
                         grab_cancel(0);
         } else {
