@@ -20,8 +20,10 @@
 # is the truth.
 
 # Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
-# wifi, cpu chip, thermometer, battery ladder full->empty, bolt.
+# volume-off, wifi, cpu chip, thermometer, battery ladder full->empty,
+# bolt.
 I_VOL=$(printf '\357\200\250')
+I_OFF=$(printf '\357\200\246')
 I_NET=$(printf '\357\207\253')
 I_CPU=$(printf '\357\213\233')
 I_TMP=$(printf '\357\213\211')
@@ -177,11 +179,27 @@ while :; do
         net="${C_NET}${I_NET}${NRM}  --"
     fi
 
-    if [ "$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null)" = "Mute: yes" ]; then
-        vol="${C_VOL}${I_VOL}${NRM}  --"
+    # The sound card is the one piece of hardware that comes and goes: on
+    # the Snapdragon laptop there is none in the SoC (no DT audio node)
+    # and the only card is the USB-C earphones' own DAC, plugged and
+    # unplugged as they are. So this field is probed every cycle, and the
+    # state drawn is the card's before the mixer's: no card at all is the
+    # off glyph in the bar's default colour, with nothing to drive; a card
+    # the sound server can see is the volume, "--" when muted; a card with
+    # no server to ask (no pulseaudio, no pipewire-pulse) is named by its
+    # ALSA id, which says "plugged" without claiming a level it cannot read.
+    card=$(ls -d /sys/class/sound/card[0-9]* 2>/dev/null | head -1)
+    if [ -z "$card" ]; then
+        vol="${I_OFF}  --"
+    elif mute=$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null); then
+        if [ "$mute" = "Mute: yes" ]; then
+            vol="${C_VOL}${I_VOL}${NRM}  --"
+        else
+            vol="${C_VOL}${I_VOL}${NRM}  $(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '{ print $5; exit }')"
+            [ "$vol" = "${C_VOL}${I_VOL}${NRM}  " ] && vol="${C_VOL}${I_VOL}${NRM}  ?"
+        fi
     else
-        vol="${C_VOL}${I_VOL}${NRM}  $(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '{ print $5; exit }')"
-        [ "$vol" = "${C_VOL}${I_VOL}${NRM}  " ] && vol="${C_VOL}${I_VOL}${NRM}  ?"
+        vol="${C_VOL}${I_VOL}${NRM}  $(cat "$card/id" 2>/dev/null || echo ?)"
     fi
 
     # A field with no source on this machine contributes nothing, not even
