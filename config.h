@@ -22,7 +22,7 @@ static const float colors[][4] = {
 /* clang-format on */
 
 static const int border_width = 1;
-static const int margin       = 2;
+static const int margin       = 5;
 
 static const float master_ratio = 0.5f;
 
