@@ -72,7 +72,9 @@ Running
 Type `tyler` at a VT login shell (libseat/seatd session). Configuration is
 `config.h`, one compilation away; the key table is dwm's shape with Alt as
 the modifier. The status feeder is `tools/tyler-status -o` — swap in anything
-that prints a line per update.
+that prints a line per update. Its accent colors are Solarized unless
+`~/.config/tyler/status-colors` reassigns them (`C_VOL="^#7fbbb3ff"`, and
+likewise `C_NET`, `C_CPU`, `C_TMP`, `C_BAT`, `C_CHG`, `C_RED`).
 
 Testing
 -------

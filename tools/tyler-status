@@ -44,6 +44,12 @@ if [ stdout = "$out" ]; then
     C_VOL="^#268bd2ff" C_NET="^#2aa198ff" C_CPU="^#859900ff"
     C_TMP="^#cb4b16ff" C_BAT="^#b58900ff" C_CHG="^#859900ff"
     C_RED="^#dc322fff" NRM="^#!"
+    # A palette of one's own: the file is sourced as shell and may
+    # reassign any C_* above, e.g. C_VOL="^#7fbbb3ff". The feeder may
+    # run from the package, a hand copy or a symlink into a clone; the
+    # file themes whichever copy is on PATH.
+    colors=$HOME/.config/tyler/status-colors
+    [ -r "$colors" ] && . "$colors"
 fi
 
 prev_total=0 prev_idle=0
