@@ -1176,8 +1176,10 @@ static void resize(struct client *, struct wlr_box);
 
 /*
  * Classic's tile: one master column on the left, ratio-split, the rest
- * stacked to the right; every cell inset by margin. A lone client gets
- * the whole work area.
+ * stacked to the right. Every gap is gap pixels wide: between
+ * neighbours, at the screen edges and under the bar alike. The gaps are
+ * laid out, not made of insets, so an odd gap stays exact. A lone client
+ * gets the whole work area, inside the gaps.
  */
 static void tile(struct screen *s)
 {
@@ -1193,17 +1195,17 @@ static void tile(struct screen *s)
         if (0 == n)
                 return;
 
-        x = s->warea.x;
-        y = s->warea.y;
-        w = s->warea.width;
-        h = s->warea.height;
+        x = s->warea.x + gap;
+        y = s->warea.y + gap;
+        w = s->warea.width - 2 * gap;
+        h = s->warea.height - 2 * gap;
 
-        left = 1 == n ? w : (int)(w * s->master_ratio);
+        left = 1 == n ? w : (int)((w - gap) * s->master_ratio);
 
-        sx = x + left;
+        sx = x + left + gap;
         sy = y;
-        sw = w - left;
-        sh = h;
+        sw = w - left - gap;
+        sh = h - (n - 2) * gap;         /* the stack's rows, gaps taken out */
         sn = n - 1;
 
         wl_list_for_each(c, &clients, link) {
@@ -1211,18 +1213,14 @@ static void tile(struct screen *s)
                         continue;
 
                 if (0 == i++) {
-                        resize(c, (struct wlr_box){
-                                        x + margin, y + margin,
-                                        left - 2 * margin, h - 2 * margin });
+                        resize(c, (struct wlr_box){ x, y, left, h });
                         continue;
                 }
 
                 dist = sh / sn--;
-                resize(c, (struct wlr_box){
-                                sx + margin, sy + margin,
-                                sw - 2 * margin, dist - 2 * margin });
+                resize(c, (struct wlr_box){ sx, sy, sw, dist });
 
-                sy += dist;
+                sy += dist + gap;
                 sh -= dist;
         }
 }
