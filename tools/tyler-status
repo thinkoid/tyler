@@ -1,6 +1,6 @@
 #!/bin/sh
 # tyler-status -- volume / wifi / cpu / temp / battery / date for tyler's
-# bar; sibling of kwm-status. Two transports, one per tyler:
+# bar. Two transports, one per tyler:
 #   default  tyler-classic (X11): each cycle sets WM_NAME on the root --
 #            via xprop, since xsetroot is not installed.
 #   -o       wayland tyler: one line per cycle on stdout; the compositor
@@ -16,8 +16,7 @@
 # laptop a battery under another name with no percentage file. All of
 # it is discovered once at startup (see below) and a field that has no
 # source is simply not drawn, rather than printing an error every five
-# seconds. Wire ~/.local/bin/tyler-status as a symlink here; the repo
-# is the truth.
+# seconds.
 
 # Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
 # volume-off, wifi, cpu chip, thermometer, battery ladder full->empty,
@@ -36,7 +35,7 @@ DEG=$(printf '\302\260')
 out=xprop
 [ "$1" = "-o" ] && out=stdout
 
-# Color escapes, kwm's grammar and solarized accents: ^#RRGGBBAA sets,
+# Color escapes and solarized accents: ^#RRGGBBAA sets,
 # ^#! restores the bar default. Only the wayland bar parses them, so
 # they exist only on the stdout transport -- the X bar draws plain.
 C_VOL= C_NET= C_CPU= C_TMP= C_BAT= C_CHG= C_RED= NRM=

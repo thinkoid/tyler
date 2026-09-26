@@ -558,7 +558,7 @@ static int utf8_encode(uint32_t cp, char *out)
 }
 
 /*
- * kwm's status color escapes: ^#RRGGBBAA switches the text color,
+ * Status color escapes: ^#RRGGBBAA switches the text color,
  * ^#! restores the caller's default. Consumes and applies one escape
  * at *s, or leaves *s alone and returns 0 — malformed sequences fall
  * through and draw literally.
@@ -604,7 +604,7 @@ static int parse_color(const char **s, const float def[4], float out[4])
 
 /*
  * Glyphs composite through their alpha mask in the fg color; color
- * glyphs (emoji, nerd icons) blend as-is. With escapes set the kwm
+ * glyphs (emoji, nerd icons) blend as-is. With escapes set the
  * color sequences apply; without, they draw as the text they are —
  * only the status field speaks the protocol.
  */

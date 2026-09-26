@@ -26,7 +26,7 @@ compositor. There is no layer-shell and there are no helper clients:
 - **The bar** is compositor-drawn pixels — fcft text, per-screen tags
   (viewed = background, occupied = underline, urgent = swap), window title,
   and a status field fed by a child process on a pipe. The status speaks
-  kwm's color escapes (`^#RRGGBBAA` sets, `^#!` restores).
+  color escapes (`^#RRGGBBAA` sets, `^#!` restores).
 - **The launcher** (Mod+p) is an integrated dmenu: the compositor owns the
   keyboard, so there are no grabs and no focus games — a flag reroutes key
   events into the filter loop and the drawing rides the bar path.
