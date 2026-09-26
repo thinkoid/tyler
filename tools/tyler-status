@@ -19,10 +19,11 @@
 # seconds.
 
 # Nerd-font icons (the bar font is IosevkaTerm Nerd Font): volume,
-# volume-off, wifi, cpu chip, thermometer, battery ladder full->empty,
+# volume-off, headphones, wifi, cpu chip, thermometer, battery ladder full->empty,
 # bolt.
 I_VOL=$(printf '\357\200\250')
 I_OFF=$(printf '\357\200\246')
+I_HP=$(printf '\357\200\245')
 I_NET=$(printf '\357\207\253')
 I_CPU=$(printf '\357\213\233')
 I_TMP=$(printf '\357\213\211')
@@ -193,18 +194,27 @@ while :; do
     # the sound server can see is the volume, "--" when muted; a card with
     # no server to ask (no pulseaudio, no pipewire-pulse) is named by its
     # ALSA id, which says "plugged" without claiming a level it cannot read.
-    card=$(ls -d /sys/class/sound/card[0-9]* 2>/dev/null | head -1)
+    # A USB audio card (snd-usb-audio) is taken to be headphones: its glyph
+    # replaces the speaker's in every state, and its id is the one named.
+    card= ico=$I_VOL
+    for c in /sys/class/sound/card[0-9]*; do
+        [ -e "$c" ] || continue
+        [ -n "$card" ] || card=$c
+        case $(readlink "$c/device/driver") in
+        */snd-usb-audio) card=$c ico=$I_HP; break ;;
+        esac
+    done
     if [ -z "$card" ]; then
         vol="${I_OFF}  --"
     elif mute=$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null); then
         if [ "$mute" = "Mute: yes" ]; then
-            vol="${C_VOL}${I_VOL}${NRM}  --"
+            vol="${C_VOL}${ico}${NRM}  --"
         else
-            vol="${C_VOL}${I_VOL}${NRM}  $(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '{ print $5; exit }')"
-            [ "$vol" = "${C_VOL}${I_VOL}${NRM}  " ] && vol="${C_VOL}${I_VOL}${NRM}  ?"
+            vol="${C_VOL}${ico}${NRM}  $(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | awk '{ print $5; exit }')"
+            [ "$vol" = "${C_VOL}${ico}${NRM}  " ] && vol="${C_VOL}${ico}${NRM}  ?"
         fi
     else
-        vol="${C_VOL}${I_VOL}${NRM}  $(cat "$card/id" 2>/dev/null || echo ?)"
+        vol="${C_VOL}${ico}${NRM}  $(cat "$card/id" 2>/dev/null || echo ?)"
     fi
 
     # A field with no source on this machine contributes nothing, not even
