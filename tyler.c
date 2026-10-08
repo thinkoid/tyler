@@ -113,7 +113,7 @@ struct client {
         struct wlr_xdg_toplevel_decoration_v1 *decoration;
         struct wlr_scene_tree *scene;
         struct wlr_scene_tree *scene_surface;
-        struct wlr_scene_rect *border[4];
+        struct wlr_scene_rect *border;  /* one rect, holed for the surface */
 
         struct wl_listener commit;
         struct wl_listener map;
@@ -390,15 +390,12 @@ static int client_is_fixed(struct client *c)
 
 static void set_border_color(struct client *c, const float color[4])
 {
-        size_t i;
-
-        /* an unmapping client's rects are already gone (focus sees it
+        /* an unmapping client's rect is already gone (focus sees it
          * as the outgoing surface) */
-        if (0 == c->border[0])
+        if (0 == c->border)
                 return;
 
-        for (i = 0; i < 4; ++i)
-                wlr_scene_rect_set_color(c->border[i], color);
+        wlr_scene_rect_set_color(c->border, color);
 }
 
 /**********************************************************************/
@@ -1645,24 +1642,65 @@ static void focus(struct client *c)
         drawbars();
 }
 
+/*
+ * Only the toplevel's own buffer is rounded: subsurfaces and popups
+ * keep their corners, as in SceneFX's tinywl. One pixel more than the
+ * border's hole: SceneFX's rounded edges fade over the pixel inside
+ * the curve, and on a thin ring the two fades on either side eat
+ * about a pixel between them; the extra pixel gives it back.
+ */
+static void round_buffer(struct wlr_scene_buffer *buffer, int sx, int sy,
+                         void *data)
+{
+        struct client *c = data;
+        struct wlr_scene_surface *s =
+                wlr_scene_surface_try_from_buffer(buffer);
+
+        (void)sx;
+        (void)sy;
+
+        if (s && s->surface == c->toplevel->base->surface)
+                wlr_scene_buffer_set_corner_radius(
+                        buffer, state_of(c)->fullscreen || 0 == corner_radius
+                                        ? 0
+                                        : corner_radius + 1);
+}
+
 static void resize(struct client *c, struct wlr_box r)
 {
         /* fullscreen is edge to edge: the border disappears with it */
         const int bw = state_of(c)->fullscreen ? 0 : border_width;
+        const int radius = state_of(c)->fullscreen ? 0 : corner_radius;
+        const int inset = radius ? 2 : 0;       /* see the border below */
 
         state_of(c)->r = r;
 
         wlr_scene_node_set_position(&c->scene->node, r.x, r.y);
         wlr_scene_node_set_position(&c->scene_surface->node, bw, bw);
 
-        wlr_scene_rect_set_size(c->border[0], r.width, bw);
-        wlr_scene_rect_set_size(c->border[1], r.width, bw);
-        wlr_scene_rect_set_size(c->border[2], bw, r.height - 2 * bw);
-        wlr_scene_rect_set_size(c->border[3], bw, r.height - 2 * bw);
+        /*
+         * The border is the whole box with the surface's area cut out,
+         * so a translucent client does not show it through. Its outer
+         * radius is the surface's plus the width, which keeps the ring
+         * even all the way round. With rounded corners the cut stops
+         * `inset` pixels short of the surface's edge, concentric with
+         * it: the surface's faded edge then blends over border color,
+         * not over a hole half cut away, which leaked the backdrop
+         * through the seam and thinned a 1-pixel ring to a hairline.
+         */
+        wlr_scene_rect_set_size(c->border, r.width, r.height);
+        wlr_scene_rect_set_corner_radius(c->border, radius ? radius + bw : 0);
+        wlr_scene_rect_set_clipped_region(
+                c->border,
+                (struct clipped_region){
+                        .area = { bw + inset, bw + inset,
+                                  r.width - 2 * (bw + inset),
+                                  r.height - 2 * (bw + inset) },
+                        .corners = corner_radii_all(
+                                radius > inset ? radius - inset : 0) });
 
-        wlr_scene_node_set_position(&c->border[1]->node, 0, r.height - bw);
-        wlr_scene_node_set_position(&c->border[2]->node, 0, bw);
-        wlr_scene_node_set_position(&c->border[3]->node, r.width - bw, bw);
+        wlr_scene_node_for_each_buffer(&c->scene_surface->node,
+                                       round_buffer, c);
 
         wlr_xdg_toplevel_set_size(c->toplevel,
                                   r.width - 2 * bw, r.height - 2 * bw);
@@ -1806,7 +1844,6 @@ static void map_handler(struct wl_listener *listener, void *arg)
         struct client *c = wl_container_of(listener, c, map);
         struct state *state = state_of(c);
         struct client *p = 0;
-        size_t i;
 
         (void)arg;
 
@@ -1818,9 +1855,10 @@ static void map_handler(struct wl_listener *listener, void *arg)
         /* popups look their parent's scene tree up here */
         c->toplevel->base->surface->data = c->scene_surface;
 
-        for (i = 0; i < 4; ++i)
-                c->border[i] = wlr_scene_rect_create(c->scene, 0, 0,
-                                                     colors[COLOR_NORMAL_BORDER]);
+        /* beneath the surface: the rounded corners show the backdrop */
+        c->border = wlr_scene_rect_create(c->scene, 0, 0,
+                                          colors[COLOR_NORMAL_BORDER]);
+        wlr_scene_node_lower_to_bottom(&c->border->node);
 
         wl_list_insert(&clients, &c->link);
         wl_list_insert(&fstack, &c->focus_link);
@@ -1904,7 +1942,7 @@ static void unmap_handler(struct wl_listener *listener, void *arg)
         wlr_scene_node_destroy(&c->scene->node);
         c->scene = 0;
         c->scene_surface = 0;
-        memset(c->border, 0, sizeof c->border);
+        c->border = 0;
 
         arrange(s);
         focus(current_client());

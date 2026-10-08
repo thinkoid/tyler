@@ -24,6 +24,9 @@ static const float colors[][4] = {
 static const int border_width = 1;
 static const int gap          = 10; /* around every tile, edges included */
 
+/* window corners, in pixels; 0 is square. The border follows them. */
+static const int corner_radius = 0;
+
 static const float master_ratio = 0.5f;
 
 static const int showbar = 1;
