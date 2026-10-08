@@ -25,7 +25,7 @@ trap 'rm -rf "$runtime"' EXIT
 
 XDG_RUNTIME_DIR="$runtime" \
 WLR_BACKENDS=headless \
-WLR_RENDERER=pixman \
+WLR_RENDERER_ALLOW_SOFTWARE=1 \
 WLR_HEADLESS_OUTPUTS="$outputs" \
         "$tyler" > "$runtime/log" 2>&1 &
 pid=$!

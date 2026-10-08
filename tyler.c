@@ -44,7 +44,6 @@
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
-#include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_subcompositor.h>
@@ -58,6 +57,9 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
 #include <wlr/util/log.h>
+
+#include <scenefx/render/fx_renderer/fx_renderer.h>
+#include <scenefx/types/wlr_scene.h>
 
 #define LISTEN(src, listener, handler)             \
         do {                                       \
@@ -3526,9 +3528,9 @@ static void init(void)
         if (0 == backend)
                 die("wlr_backend_autocreate failed");
 
-        renderer = wlr_renderer_autocreate(backend);
+        renderer = fx_renderer_create(backend);
         if (0 == renderer)
-                die("wlr_renderer_autocreate failed");
+                die("fx_renderer_create failed");
         LISTEN(&renderer->events.lost, &renderer_lost_listener,
                renderer_lost_handler);
 

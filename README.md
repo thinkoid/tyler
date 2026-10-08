@@ -15,10 +15,10 @@ What it is
 ----------
 
 A single-file tiling compositor, ~3,200 lines of C against wlroots 0.20,
-rendered through wlr_scene, configured by recompiling `config.h`. One binary,
-one config, every machine: nothing machine-specific lives in the config —
-output placement is decided by policy (internal panel leftmost, externals to
-the right), never by output name.
+rendered through SceneFX's wlr_scene, configured by recompiling `config.h`.
+One binary, one config, every machine: nothing machine-specific lives in the
+config — output placement is decided by policy (internal panel leftmost,
+externals to the right), never by output name.
 
 The design stance is that everything the desktop needs lives *in* the
 compositor. There is no layer-shell and there are no helper clients:
@@ -54,11 +54,15 @@ Building
     meson setup build
     ninja -C build
 
-Dependencies: wlroots 0.20, wayland-server, wayland-protocols, xkbcommon,
-fcft, pixman, libdrm, libinput. The build also produces `vkbd` and `vptr`,
-protocol-level input injectors used by the test harness; they are never
-installed. `tools/tyler-status` is installed alongside the compositor —
-config.h names it by PATH.
+Dependencies: wlroots 0.20, SceneFX 0.5, wayland-server, wayland-protocols,
+xkbcommon, fcft, pixman, libdrm, libinput. An installed SceneFX 0.5 is used
+if pkg-config finds it; otherwise meson downloads the release pinned in
+`subprojects/scenefx.wrap` and links it statically; install with `meson
+install -C build --skip-subprojects`, or the bundled copy's headers and
+archive go in too. The build also produces `vkbd` and `vptr`, protocol-level
+input injectors used by the test harness; they are never installed.
+`tools/tyler-status` is installed alongside the compositor — config.h names
+it by PATH.
 
 Link-time is only half the story. The default config spawns `foot` and
 drives volume and backlight through `pactl` and `light`; the bundled status
@@ -80,10 +84,12 @@ Testing
 -------
 
 The compositor is verified headless: `WLR_BACKENDS=headless
-WLR_RENDERER=pixman`, clients driven by `vkbd` and `vptr`, geometry read back
-from `WAYLAND_DEBUG` traces, bar pixels dumped via `TYLER_BAR_DUMP`, and
-screenshots via the internal PNG path. Most features landed with an oracle
-run proving them before they ever touched real hardware.
+WLR_RENDERER_ALLOW_SOFTWARE=1` (SceneFX renders only through GLES2; this
+lets EGL settle for a software driver), clients driven by `vkbd` and `vptr`,
+geometry read back from `WAYLAND_DEBUG` traces, bar pixels dumped via
+`TYLER_BAR_DUMP`, and screenshots via the internal PNG path. Most features
+landed with an oracle run proving them before they ever touched real
+hardware.
 
 Some of those oracles are now wired into the build:
 

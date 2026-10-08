@@ -8,6 +8,16 @@ add_project_arguments('-DWLR_USE_UNSTABLE',
                       language : 'c')
 
 wlroots = dependency('wlroots-0.20')
+
+# SceneFX replaces wlroots' scene graph and renderer (rounded corners).
+# An installed copy wins; without one the wrap builds 0.5 statically.
+# Either way its wlr_scene_* symbols interpose on wlroots' own: SceneFX
+# leaves the surface, xdg-shell and output-layout helpers to wlroots,
+# and those call back into the scene core by name.
+scenefx = dependency('scenefx-0.5', version : ['>=0.5.0', '<0.6.0'],
+                     default_options : ['default_library=static',
+                                        'examples=false'])
+
 wayland_server = dependency('wayland-server')
 wayland_client = dependency('wayland-client')
 xkbcommon = dependency('xkbcommon')
@@ -23,8 +33,9 @@ wayland_scanner = find_program(
                 .get_variable('wayland_scanner'))
 
 tyler_exe = executable('tyler', 'tyler.c',
-                       dependencies : [wlroots, wayland_server, xkbcommon,
-                                       fcft, pixman, libdrm, libinput],
+                       dependencies : [scenefx, wlroots, wayland_server,
+                                       xkbcommon, fcft, pixman, libdrm,
+                                       libinput],
                        install : true)
 
 # The status feeder config.h names by PATH; without it an installed
