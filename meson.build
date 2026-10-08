@@ -7,7 +7,7 @@ add_project_arguments('-DWLR_USE_UNSTABLE',
                       '-D_POSIX_C_SOURCE=200809L',
                       language : 'c')
 
-wlroots = dependency('wlroots-0.19')
+wlroots = dependency('wlroots-0.20')
 wayland_server = dependency('wayland-server')
 wayland_client = dependency('wayland-client')
 xkbcommon = dependency('xkbcommon')
@@ -16,23 +16,13 @@ pixman = dependency('pixman-1')
 libdrm = dependency('libdrm')
 libinput = dependency('libinput')
 
-# wlroots requires the compositor to rig up the wayland-scanner protocol
-# generation itself (see dwl's Makefile for the reference recipe).
+# The test harness's input injectors speak protocols wayland-client has
+# no headers for; wayland-scanner generates them.
 wayland_scanner = find_program(
         dependency('wayland-scanner', native : true)
                 .get_variable('wayland_scanner'))
 
-protocol_dir = dependency('wayland-protocols').get_variable('pkgdatadir')
-
-# Not a leftover: wlroots' public wlr_xdg_shell.h includes the generated
-# header, so the target is load-bearing for anyone including it.
-xdg_shell_h = custom_target(
-        'xdg-shell-protocol.h',
-        input : protocol_dir / 'stable/xdg-shell/xdg-shell.xml',
-        output : 'xdg-shell-protocol.h',
-        command : [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'])
-
-tyler_exe = executable('tyler', ['tyler.c', xdg_shell_h],
+tyler_exe = executable('tyler', 'tyler.c',
                        dependencies : [wlroots, wayland_server, xkbcommon,
                                        fcft, pixman, libdrm, libinput],
                        install : true)

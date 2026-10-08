@@ -14,7 +14,7 @@ The porthole defoggers are factory-installed.
 What it is
 ----------
 
-A single-file tiling compositor, ~3,200 lines of C against wlroots 0.19,
+A single-file tiling compositor, ~3,200 lines of C against wlroots 0.20,
 rendered through wlr_scene, configured by recompiling `config.h`. One binary,
 one config, every machine: nothing machine-specific lives in the config —
 output placement is decided by policy (internal panel leftmost, externals to
@@ -54,7 +54,7 @@ Building
     meson setup build
     ninja -C build
 
-Dependencies: wlroots 0.19, wayland-server, wayland-protocols, xkbcommon,
+Dependencies: wlroots 0.20, wayland-server, wayland-protocols, xkbcommon,
 fcft, pixman, libdrm, libinput. The build also produces `vkbd` and `vptr`,
 protocol-level input injectors used by the test harness; they are never
 installed. `tools/tyler-status` is installed alongside the compositor —
