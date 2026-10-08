@@ -1643,27 +1643,62 @@ static void focus(struct client *c)
 }
 
 /*
- * Only the toplevel's own buffer is rounded: subsurfaces and popups
- * keep their corners, as in SceneFX's tinywl. One pixel more than the
- * border's hole: SceneFX's rounded edges fade over the pixel inside
- * the curve, and on a thin ring the two fades on either side eat
- * about a pixel between them; the extra pixel gives it back.
+ * A buffer is rounded at the corners it shares with the window, main
+ * surface and subsurfaces alike: Firefox draws its page into a
+ * subsurface the size of the window, while a video overlay inside it
+ * keeps square corners. One pixel more than the border's hole:
+ * SceneFX's rounded edges fade over the pixel inside the curve, and on
+ * a thin ring the two fades on either side eat about a pixel between
+ * them; the extra pixel gives it back.
  */
 static void round_buffer(struct wlr_scene_buffer *buffer, int sx, int sy,
                          void *data)
 {
         struct client *c = data;
-        struct wlr_scene_surface *s =
-                wlr_scene_surface_try_from_buffer(buffer);
+        const int full = state_of(c)->fullscreen;
+        const int bw = full ? 0 : border_width;
+        const int rad = full || 0 == corner_radius ? 0 : corner_radius + 1;
+        const struct wlr_box *r = &state_of(c)->r;
 
-        (void)sx;
-        (void)sy;
+        /* the window's content box; sx and sy count from the tree's parent */
+        const int w = r->width - 2 * bw, h = r->height - 2 * bw;
+        int bufw, bufh;
 
-        if (s && s->surface == c->toplevel->base->surface)
-                wlr_scene_buffer_set_corner_radius(
-                        buffer, state_of(c)->fullscreen || 0 == corner_radius
-                                        ? 0
-                                        : corner_radius + 1);
+        if (0 == wlr_scene_surface_try_from_buffer(buffer))
+                return;
+
+        sx -= c->scene_surface->node.x;
+        sy -= c->scene_surface->node.y;
+
+        bufw = buffer->dst_width ? buffer->dst_width
+                : buffer->buffer ? buffer->buffer->width : 0;
+        bufh = buffer->dst_height ? buffer->dst_height
+                : buffer->buffer ? buffer->buffer->height : 0;
+
+        wlr_scene_buffer_set_corner_radii(
+                buffer, (struct fx_corner_radii){
+                        .top_left = 0 == sx && 0 == sy ? rad : 0,
+                        .top_right = w == sx + bufw && 0 == sy ? rad : 0,
+                        .bottom_right =
+                                w == sx + bufw && h == sy + bufh ? rad : 0,
+                        .bottom_left = 0 == sx && h == sy + bufh ? rad : 0 });
+}
+
+/*
+ * Clipped to the window geometry first: a client that draws its own
+ * shadow margins anyway (Firefox does, under server-side decorations)
+ * has a main buffer larger than the window, whose corners no rounding
+ * can reach. The clip also keeps those margins out of the gaps.
+ */
+static void round_corners(struct client *c)
+{
+        if (0 == c->scene_surface)
+                return;
+
+        wlr_scene_subsurface_tree_set_clip(&c->scene_surface->node,
+                                           &c->toplevel->base->geometry);
+        wlr_scene_node_for_each_buffer(&c->scene_surface->node,
+                                       round_buffer, c);
 }
 
 static void resize(struct client *c, struct wlr_box r)
@@ -1699,8 +1734,7 @@ static void resize(struct client *c, struct wlr_box r)
                         .corners = corner_radii_all(
                                 radius > inset ? radius - inset : 0) });
 
-        wlr_scene_node_for_each_buffer(&c->scene_surface->node,
-                                       round_buffer, c);
+        round_corners(c);
 
         wlr_xdg_toplevel_set_size(c->toplevel,
                                   r.width - 2 * bw, r.height - 2 * bw);
@@ -1837,6 +1871,9 @@ static void commit_handler(struct wl_listener *listener, void *arg)
 
                 wlr_xdg_toplevel_set_size(c->toplevel, 0, 0);
         }
+
+        /* a subsurface may come or resize between arrangements */
+        round_corners(c);
 }
 
 static void map_handler(struct wl_listener *listener, void *arg)
