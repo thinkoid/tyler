@@ -1923,6 +1923,15 @@ static void toplevel_destroy_handler(struct wl_listener *listener, void *arg)
         wl_list_remove(&c->request_fullscreen.link);
         wl_list_remove(&c->set_title.link);
 
+        /*
+         * A client that disconnects without destroying its decoration
+         * object loses the toplevel first; wlroots then destroys the
+         * decoration from the toplevel's own destroy signal, after this
+         * handler, and would signal into the freed client.
+         */
+        if (c->decoration)
+                destroy_decoration_handler(&c->destroy_decoration, 0);
+
         free(c);
 }
 
