@@ -1,7 +1,8 @@
 project('tyler', 'c',
         version : '0.1',
         license : 'WTFPL',
-        default_options : ['c_std=c11', 'warning_level=2'])
+        default_options : ['c_std=c11', 'warning_level=2',
+                           'force_fallback_for=scenefx'])
 
 add_project_arguments('-DWLR_USE_UNSTABLE',
                       '-D_POSIX_C_SOURCE=200809L',
@@ -10,8 +11,19 @@ add_project_arguments('-DWLR_USE_UNSTABLE',
 wlroots = dependency('wlroots-0.20')
 
 # SceneFX replaces wlroots' scene graph and renderer (rounded corners).
-# An installed copy wins; without one the wrap builds 0.5 statically.
-# Either way its wlr_scene_* symbols interpose on wlroots' own: SceneFX
+# Always the wrap's copy, built statically: it carries the corner patch
+# in subprojects/packagefiles, which an installed SceneFX would not.
+# The patch: NVIDIA's GLSL ES compiler does not define
+# GL_FRAGMENT_PRECISION_HIGH for SceneFX's version-less shaders, so
+# every effect shader ran at mediump, a 16-bit float that loses the
+# half pixel past 1024 and the odd pixel past 2048: staircased corners
+# and 2x2-blocked shadows on a 4K panel. The shaders now declare highp
+# outright. With precision restored, the half-pixel fudges SceneFX
+# applied to each shape's box come off and every rounded edge is
+# anti-aliased half a pixel either side of its line, and the region a
+# cut-out excludes from drawing covers the whole corner square, not
+# 0.3 of the radius, which left the shadow undrawn at the corner.
+# Its wlr_scene_* symbols interpose on wlroots' own: SceneFX
 # leaves the surface, xdg-shell and output-layout helpers to wlroots,
 # and those call back into the scene core by name.
 scenefx = dependency('scenefx-0.5', version : ['>=0.5.0', '<0.6.0'],

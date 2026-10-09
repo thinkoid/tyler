@@ -55,11 +55,13 @@ Building
     ninja -C build
 
 Dependencies: wlroots 0.20, SceneFX 0.5, wayland-server, wayland-protocols,
-xkbcommon, fcft, pixman, libdrm, libinput. An installed SceneFX 0.5 is used
-if pkg-config finds it; otherwise meson downloads the release pinned in
-`subprojects/scenefx.wrap` and links it statically; install with `meson
-install -C build --skip-subprojects`, or the bundled copy's headers and
-archive go in too. The build also produces `vkbd` and `vptr`, protocol-level
+xkbcommon, fcft, pixman, libdrm, libinput. SceneFX is always the bundled
+copy: meson downloads the release pinned in `subprojects/scenefx.wrap`,
+applies `subprojects/packagefiles/scenefx-0.5-corners.patch` (its effect
+shaders at high precision, symmetric anti-aliasing on every rounded edge;
+the comment in `meson.build` says why) and links it statically; install with `meson install -C
+build --skip-subprojects`, or the bundled copy's headers and archive go in
+too. An installed SceneFX is not used, because it lacks the patch. The build also produces `vkbd` and `vptr`, protocol-level
 input injectors used by the test harness; they are never installed.
 `tools/tyler-status` is installed alongside the compositor — config.h names
 it by PATH.

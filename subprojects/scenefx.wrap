@@ -3,6 +3,7 @@ directory = scenefx-0.5
 source_url = https://github.com/wlrfx/scenefx/archive/refs/tags/0.5.tar.gz
 source_filename = scenefx-0.5.tar.gz
 source_hash = 0fa8ecca0e310f813efd052624c5ed7d9153d6a0fdead5cc957d34c07f9a86c6
+diff_files = scenefx-0.5-corners.patch
 
 [provide]
 dependency_names = scenefx-0.5

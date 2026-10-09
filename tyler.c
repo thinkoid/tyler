@@ -1652,10 +1652,11 @@ static void focus(struct client *c)
  * A buffer is rounded at the corners it shares with the window, main
  * surface and subsurfaces alike: Firefox draws its page into a
  * subsurface the size of the window, while a video overlay inside it
- * keeps square corners. One pixel more than the border's hole:
- * SceneFX's rounded edges fade over the pixel inside the curve, and on
- * a thin ring the two fades on either side eat about a pixel between
- * them; the extra pixel gives it back.
+ * keeps square corners. The radius is the window's own, concentric
+ * with the border's outer arc. The bundled SceneFX is patched
+ * (subprojects/packagefiles) to anti-alias every rounded edge half a
+ * pixel either side of its line; the border runs one pixel under the
+ * surface, so the faded edge blends over border color, not backdrop.
  */
 static void round_buffer(struct wlr_scene_buffer *buffer, int sx, int sy,
                          void *data)
@@ -1663,7 +1664,7 @@ static void round_buffer(struct wlr_scene_buffer *buffer, int sx, int sy,
         struct client *c = data;
         const int full = state_of(c)->fullscreen;
         const int bw = full ? 0 : border_width;
-        const int rad = full || 0 == corner_radius ? 0 : corner_radius + 1;
+        const int rad = full || 0 == corner_radius ? 0 : corner_radius;
         const struct wlr_box *r = &state_of(c)->r;
 
         /* the window's content box; sx and sy count from the tree's parent */
@@ -1712,7 +1713,7 @@ static void resize(struct client *c, struct wlr_box r)
         /* fullscreen is edge to edge: the border disappears with it */
         const int bw = state_of(c)->fullscreen ? 0 : border_width;
         const int radius = state_of(c)->fullscreen ? 0 : corner_radius;
-        const int inset = radius ? 2 : 0;       /* see the border below */
+        const int inset = radius ? 1 : 0;       /* see the border below */
 
         state_of(c)->r = r;
 
@@ -1724,10 +1725,11 @@ static void resize(struct client *c, struct wlr_box r)
          * so a translucent client does not show it through. Its outer
          * radius is the surface's plus the width, which keeps the ring
          * even all the way round. With rounded corners the cut stops
-         * `inset` pixels short of the surface's edge, concentric with
-         * it: the surface's faded edge then blends over border color,
-         * not over a hole half cut away, which leaked the backdrop
-         * through the seam and thinned a 1-pixel ring to a hairline.
+         * `inset` pixel short of the surface's edge, concentric with
+         * it. Surface edge and cut are each anti-aliased half a pixel
+         * either side of their line, so one pixel of overlap is the
+         * least that leaves no seam; a translucent client shows it as
+         * a one-pixel ring of border color inside its edge.
          */
         wlr_scene_rect_set_size(c->border, r.width, r.height);
         wlr_scene_rect_set_corner_radius(c->border, radius ? radius + bw : 0);
@@ -1743,8 +1745,10 @@ static void resize(struct client *c, struct wlr_box r)
         /*
          * SceneFX insets the shadow's box by the blur sigma, so a node
          * glow_size larger all round, blurred by glow_size, centers its
-         * falloff on the border's outer edge. The border box is cut out,
-         * so a translucent client does not show the glow through.
+         * falloff on the border's outer edge. The box is cut out one
+         * pixel inside the border, for the same reason as the border's
+         * own cut: the border's faded outer edge blends over glow, and
+         * a translucent client does not show the glow through.
          * Fullscreen has no border to glow: an empty node draws nothing.
          */
         if (c->glow) {
@@ -1759,9 +1763,11 @@ static void resize(struct client *c, struct wlr_box r)
                 wlr_scene_shadow_set_clipped_region(
                         c->glow,
                         (struct clipped_region){
-                                .area = { g, g, r.width, r.height },
+                                .area = { g + inset, g + inset,
+                                          r.width - 2 * inset,
+                                          r.height - 2 * inset },
                                 .corners = corner_radii_all(
-                                        radius ? radius + bw : 0) });
+                                        radius ? radius + bw - inset : 0) });
         }
 
         round_corners(c);
