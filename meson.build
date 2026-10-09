@@ -30,6 +30,16 @@ scenefx = dependency('scenefx-0.5', version : ['>=0.5.0', '<0.6.0'],
                      default_options : ['default_library=static',
                                         'examples=false'])
 
+# Meson applies the wrap's diff only when it extracts the tarball. An
+# extraction left over from before the patch is reused as it is, and
+# the build goes through with the old shaders. Refuse it here.
+if run_command('grep', '-q', 'smoothstep(-0.5',
+               meson.current_source_dir() /
+               'subprojects/scenefx-0.5/render/fx_renderer/shaders/corner_alpha.frag',
+               check : false).returncode() != 0
+    error('subprojects/scenefx-0.5 is a stale extraction without the corner patch: rm -rf it and set up again')
+endif
+
 wayland_server = dependency('wayland-server')
 wayland_client = dependency('wayland-client')
 xkbcommon = dependency('xkbcommon')
