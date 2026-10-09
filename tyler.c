@@ -114,6 +114,7 @@ struct client {
         struct wlr_scene_tree *scene;
         struct wlr_scene_tree *scene_surface;
         struct wlr_scene_rect *border;  /* one rect, holed for the surface */
+        struct wlr_scene_shadow *glow;  /* beneath it; NULL if glow_size is 0 */
 
         struct wl_listener commit;
         struct wl_listener map;
@@ -388,14 +389,19 @@ static int client_is_fixed(struct client *c)
                 s->min_height == s->max_height;
 }
 
-static void set_border_color(struct client *c, const float color[4])
+static void show_focus(struct client *c, int focused)
 {
         /* an unmapping client's rect is already gone (focus sees it
          * as the outgoing surface) */
         if (0 == c->border)
                 return;
 
-        wlr_scene_rect_set_color(c->border, color);
+        wlr_scene_rect_set_color(
+                c->border,
+                colors[focused ? COLOR_SELECT_BORDER : COLOR_NORMAL_BORDER]);
+
+        if (c->glow)
+                wlr_scene_node_set_enabled(&c->glow->node, focused);
 }
 
 /**********************************************************************/
@@ -1601,7 +1607,7 @@ static void focus(struct client *c)
                 current_screen = c->screen;
 
                 c->urgent = 0;
-                set_border_color(c, colors[COLOR_SELECT_BORDER]);
+                show_focus(c, 1);
                 wlr_scene_node_raise_to_top(&c->scene->node);
         }
 
@@ -1613,7 +1619,7 @@ static void focus(struct client *c)
                         struct client *o = t->base->data;
 
                         if (o)
-                                set_border_color(o, colors[COLOR_NORMAL_BORDER]);
+                                show_focus(o, 0);
 
                         wlr_xdg_toplevel_set_activated(t, 0);
                 }
@@ -1733,6 +1739,30 @@ static void resize(struct client *c, struct wlr_box r)
                                   r.height - 2 * (bw + inset) },
                         .corners = corner_radii_all(
                                 radius > inset ? radius - inset : 0) });
+
+        /*
+         * SceneFX insets the shadow's box by the blur sigma, so a node
+         * glow_size larger all round, blurred by glow_size, centers its
+         * falloff on the border's outer edge. The border box is cut out,
+         * so a translucent client does not show the glow through.
+         * Fullscreen has no border to glow: an empty node draws nothing.
+         */
+        if (c->glow) {
+                const int g = bw ? glow_size : 0;
+
+                wlr_scene_node_set_position(&c->glow->node, -g, -g);
+                wlr_scene_shadow_set_size(c->glow,
+                                          g ? r.width + 2 * g : 0,
+                                          g ? r.height + 2 * g : 0);
+                wlr_scene_shadow_set_corner_radius(c->glow,
+                                                   radius ? radius + bw : 0);
+                wlr_scene_shadow_set_clipped_region(
+                        c->glow,
+                        (struct clipped_region){
+                                .area = { g, g, r.width, r.height },
+                                .corners = corner_radii_all(
+                                        radius ? radius + bw : 0) });
+        }
 
         round_corners(c);
 
@@ -1897,6 +1927,19 @@ static void map_handler(struct wl_listener *listener, void *arg)
                                           colors[COLOR_NORMAL_BORDER]);
         wlr_scene_node_lower_to_bottom(&c->border->node);
 
+        /* beneath the border, lit only while focused */
+        if (0 < glow_size) {
+                float color[4];
+
+                memcpy(color, colors[COLOR_SELECT_BORDER], sizeof color);
+                color[3] *= glow_alpha;
+
+                c->glow = wlr_scene_shadow_create(c->scene, 0, 0, 0,
+                                                  glow_size, color);
+                wlr_scene_node_lower_to_bottom(&c->glow->node);
+                wlr_scene_node_set_enabled(&c->glow->node, 0);
+        }
+
         wl_list_insert(&clients, &c->link);
         wl_list_insert(&fstack, &c->focus_link);
 
@@ -1980,6 +2023,7 @@ static void unmap_handler(struct wl_listener *listener, void *arg)
         c->scene = 0;
         c->scene_surface = 0;
         c->border = 0;
+        c->glow = 0;
 
         arrange(s);
         focus(current_client());

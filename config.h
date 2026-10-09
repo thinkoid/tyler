@@ -27,6 +27,14 @@ static const int gap          = 10; /* around every tile, edges included */
 /* window corners, in pixels; 0 is square. The border follows them. */
 static const int corner_radius = 16;
 
+/*
+ * A glow around the focused window in its border color, glow_size
+ * pixels wide at glow_alpha of the color's strength; 0 is none. Keep
+ * it under gap, or it reaches the neighboring tile.
+ */
+static const int glow_size    = 0;
+static const float glow_alpha = 1.0f;
+
 static const float master_ratio = 0.5f;
 
 static const int showbar = 1;
