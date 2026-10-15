@@ -230,6 +230,17 @@ static pid_t status_pid;
 
 static struct wl_event_source *signal_sources[3];
 
+/*
+ * The keyboard backlight (config.h): an LED under /sys/class/leds, lit
+ * on a key press, out on the timer. Writes are open/write/close and
+ * happen only on a change of state, so typing costs a timer re-arm.
+ */
+static char kbd_backlight_path[320];   /* empty: no LED, feature off */
+static int kbd_backlight_max;
+static int kbd_backlight_pct;          /* the live level; keys move it */
+static int kbd_backlight_lit;
+static struct wl_event_source *kbd_backlight_timer;
+
 /* the menu draws in menu_screen's bar strip while active */
 static int menu_active;
 static struct screen *menu_screen;
@@ -284,6 +295,8 @@ static void volume_down(unsigned);
 static void volume_mute(unsigned);
 static void brightness_up(unsigned);
 static void brightness_down(unsigned);
+static void kbd_backlight_up(unsigned);
+static void kbd_backlight_down(unsigned);
 static void toggle_bar(unsigned);
 static void focus_next(unsigned);
 static void focus_prev(unsigned);
@@ -2457,6 +2470,157 @@ static void brightness_down(unsigned unused)
         spawn(brightdowncmd);
 }
 
+static int kbd_backlight_write(int value)
+{
+        char buf[16];
+        int fd, len, n;
+
+        fd = open(kbd_backlight_path, O_WRONLY | O_CLOEXEC);
+        if (fd < 0)
+                return -1;
+
+        len = snprintf(buf, sizeof buf, "%d", value);
+        n = write(fd, buf, len);
+        close(fd);
+
+        return n == len ? 0 : -1;
+}
+
+static void kbd_backlight_set(int lit)
+{
+        int value = lit ? kbd_backlight_max * kbd_backlight_pct / 100 : 0;
+
+        if (0 == kbd_backlight_write(value))
+                kbd_backlight_lit = lit;
+}
+
+static int kbd_backlight_timer_handler(void *arg)
+{
+        (void)arg;
+
+        kbd_backlight_set(0);
+
+        return 0;
+}
+
+/* a key press: light it if it is out, and start the clock again */
+static void kbd_backlight_touch(void)
+{
+        if (0 == kbd_backlight_path[0])
+                return;
+
+        if (!kbd_backlight_lit)
+                kbd_backlight_set(1);
+
+        if (0 < kbd_backlight_timeout)
+                wl_event_source_timer_update(kbd_backlight_timer,
+                                             kbd_backlight_timeout);
+}
+
+static void kbd_backlight_step_by(int delta)
+{
+        if (0 == kbd_backlight_path[0])
+                return;
+
+        kbd_backlight_pct += delta;
+        if (kbd_backlight_pct < 0)
+                kbd_backlight_pct = 0;
+        if (100 < kbd_backlight_pct)
+                kbd_backlight_pct = 100;
+
+        kbd_backlight_set(1);
+}
+
+static void kbd_backlight_up(unsigned unused)
+{
+        (void)unused;
+
+        kbd_backlight_step_by(kbd_backlight_step);
+}
+
+static void kbd_backlight_down(unsigned unused)
+{
+        (void)unused;
+
+        kbd_backlight_step_by(-kbd_backlight_step);
+}
+
+/*
+ * Find the LED: the first /sys/class/leds entry named *kbd_backlight
+ * with a readable maximum and a writable brightness. None, or level 0
+ * in config.h, leaves the path empty and every other call a no-op.
+ */
+static void kbd_backlight_init(void)
+{
+        static const char suffix[] = "kbd_backlight";
+        char path[sizeof kbd_backlight_path];
+        struct dirent *ent;
+        DIR *dir;
+        FILE *fp;
+
+        /* nested and headless backends have no session, and no business with the LED */
+        if (kbd_backlight_level <= 0 || 0 == session)
+                return;
+
+        dir = opendir("/sys/class/leds");
+        if (0 == dir)
+                return;
+
+        while ((ent = readdir(dir))) {
+                size_t n = strlen(ent->d_name), m = sizeof suffix - 1;
+                int got;
+
+                if (n < m || strcmp(ent->d_name + n - m, suffix))
+                        continue;
+
+                snprintf(path, sizeof path, "/sys/class/leds/%s/max_brightness",
+                         ent->d_name);
+                fp = fopen(path, "r");
+                if (0 == fp)
+                        continue;
+                got = fscanf(fp, "%d", &kbd_backlight_max);
+                fclose(fp);
+                if (1 != got || kbd_backlight_max <= 0)
+                        continue;
+
+                snprintf(path, sizeof path, "/sys/class/leds/%s/brightness",
+                         ent->d_name);
+                if (access(path, W_OK))
+                        continue;
+
+                snprintf(kbd_backlight_path, sizeof kbd_backlight_path, "%s",
+                         path);
+                break;
+        }
+
+        closedir(dir);
+
+        if (0 == kbd_backlight_path[0]) {
+                wlr_log(WLR_INFO, "keyboard backlight: no LED to drive");
+                return;
+        }
+
+        kbd_backlight_pct = kbd_backlight_level;
+        kbd_backlight_timer = wl_event_loop_add_timer(
+                event_loop, kbd_backlight_timer_handler, 0);
+
+        wlr_log(WLR_INFO, "keyboard backlight: %s, %d%% of %d, %d ms",
+                kbd_backlight_path, kbd_backlight_pct, kbd_backlight_max,
+                kbd_backlight_timeout);
+
+        /* the login that started us was typed */
+        kbd_backlight_touch();
+}
+
+static void kbd_backlight_fini(void)
+{
+        if (0 == kbd_backlight_path[0])
+                return;
+
+        kbd_backlight_set(0);
+        wl_event_source_remove(kbd_backlight_timer);
+}
+
 static void quit(unsigned unused)
 {
         (void)unused;
@@ -3197,9 +3361,12 @@ static void kb_key_handler(struct wl_listener *listener, void *arg)
         int nsyms = xkb_state_key_get_syms(kb->group->keyboard.xkb_state,
                                            keycode, &syms);
 
-        if (WL_KEYBOARD_KEY_STATE_PRESSED == event->state)
+        if (WL_KEYBOARD_KEY_STATE_PRESSED == event->state) {
+                kbd_backlight_touch();
+
                 for (i = 0; i < nsyms; ++i)
                         handled |= key_dispatch(mods, syms[i]);
+        }
 
         /*
          * Held bindings repeat compositor-side — X gave classic this
@@ -3662,6 +3829,9 @@ static void init(void)
         if (0 == backend)
                 die("wlr_backend_autocreate failed");
 
+        /* after the backend: the session it may have opened gates the LED */
+        kbd_backlight_init();
+
         renderer = fx_renderer_create(backend);
         if (0 == renderer)
                 die("fx_renderer_create failed");
@@ -3852,6 +4022,7 @@ static void fini(void)
         wl_list_remove(&bell_ring_listener.link);
         wl_list_remove(&renderer_lost_listener.link);
 
+        kbd_backlight_fini();
         keyboard_destroy(kb_main);
         xkb_keymap_unref(keymap);
 

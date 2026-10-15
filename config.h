@@ -86,6 +86,20 @@ static const double accel_speed = 0.5; /* [-1, 1] */
 static const char *cursor_theme = 0;
 static const int cursor_size    = 24;
 
+/*
+ * The keyboard backlight. A key press lights it at kbd_backlight_level
+ * percent of the LED's maximum and kbd_backlight_timeout ms after the
+ * last press it goes out, the way macOS runs it. The LED is whichever
+ * /sys/class/leds entry is named *kbd_backlight (plain on Apple's SPI
+ * keyboards, vendor-prefixed elsewhere), found at startup; a machine
+ * without one is left alone. Level 0 turns the feature off, timeout 0
+ * keeps it lit. The XF86KbdBrightness keys, where a keyboard has them,
+ * move the level in steps of kbd_backlight_step.
+ */
+static const int kbd_backlight_level   = 40;   /* percent */
+static const int kbd_backlight_timeout = 5000; /* ms */
+static const int kbd_backlight_step    = 10;   /* percent per key */
+
 static const char *const termcmd[] = { "foot", 0 };
 
 /* the XF86 media rows: pactl and light, the tools this fleet has */
@@ -131,6 +145,8 @@ static const struct key keys[] = {
         { 0, XKB_KEY_XF86AudioMute,         volume_mute,     0 },
         { 0, XKB_KEY_XF86MonBrightnessUp,   brightness_up,   0 },
         { 0, XKB_KEY_XF86MonBrightnessDown, brightness_down, 0 },
+        { 0, XKB_KEY_XF86KbdBrightnessUp,   kbd_backlight_up,   0 },
+        { 0, XKB_KEY_XF86KbdBrightnessDown, kbd_backlight_down, 0 },
 
         { MODKEY,   XKB_KEY_t,       tile_current,      0 },
         { MODSHIFT, XKB_KEY_Q,       quit,              0 },
