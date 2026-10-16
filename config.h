@@ -89,16 +89,18 @@ static const int cursor_size    = 24;
 /*
  * The keyboard backlight. A key press lights it at kbd_backlight_level
  * percent of the LED's maximum and kbd_backlight_timeout ms after the
- * last press it goes out, the way macOS runs it. The LED is whichever
- * /sys/class/leds entry is named *kbd_backlight (plain on Apple's SPI
- * keyboards, vendor-prefixed elsewhere), found at startup; a machine
- * without one is left alone. Level 0 turns the feature off, timeout 0
- * keeps it lit. The XF86KbdBrightness keys, where a keyboard has them,
- * move the level in steps of kbd_backlight_step.
+ * last press it goes out, the way macOS runs it. The LED is the
+ * /sys/class/leds entry named exactly kbd_backlight, Apple's plain PWM
+ * that nothing else drives, found at startup. A vendor-prefixed one
+ * (dell::kbd_backlight) belongs to an EC that runs the level and the
+ * idle timer by itself, and is left alone; so is a machine with none.
+ * Level 0 turns the feature off, timeout 0 keeps it lit. The
+ * XF86KbdBrightness keys, where a keyboard has them, move the level in
+ * steps of kbd_backlight_step.
  */
-static const int kbd_backlight_level   = 40;   /* percent */
-static const int kbd_backlight_timeout = 5000; /* ms */
-static const int kbd_backlight_step    = 10;   /* percent per key */
+static const int kbd_backlight_level   = 40;    /* percent */
+static const int kbd_backlight_timeout = 15000; /* ms */
+static const int kbd_backlight_step    = 10;    /* percent per key */
 
 static const char *const termcmd[] = { "foot", 0 };
 

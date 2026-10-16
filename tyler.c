@@ -2552,7 +2552,7 @@ static void kbd_backlight_down(unsigned unused)
  */
 static void kbd_backlight_init(void)
 {
-        static const char suffix[] = "kbd_backlight";
+        static const char bare[] = "kbd_backlight";
         char path[sizeof kbd_backlight_path];
         struct dirent *ent;
         DIR *dir;
@@ -2567,10 +2567,20 @@ static void kbd_backlight_init(void)
                 return;
 
         while ((ent = readdir(dir))) {
-                size_t n = strlen(ent->d_name), m = sizeof suffix - 1;
+                size_t n = strlen(ent->d_name), m = sizeof bare - 1;
                 int got;
 
-                if (n < m || strcmp(ent->d_name + n - m, suffix))
+                /*
+                 * Only the bare name. A vendor prefix (dell::kbd_backlight)
+                 * names the driver of an EC that already runs the level and
+                 * the idle timer itself; driving it here would fight that.
+                 */
+                if (n > m && 0 == strcmp(ent->d_name + n - m, bare)) {
+                        wlr_log(WLR_INFO, "keyboard backlight: %s is the "
+                                "firmware's, left alone", ent->d_name);
+                        continue;
+                }
+                if (strcmp(ent->d_name, bare))
                         continue;
 
                 snprintf(path, sizeof path, "/sys/class/leds/%s/max_brightness",

@@ -77,9 +77,10 @@ Running
 
 Type `tyler` at a VT login shell (libseat/seatd session). Configuration is
 `config.h`, one compilation away; the key table is dwm's shape with Alt as
-the modifier. A keyboard backlight, where the kernel exposes one as a
-`*kbd_backlight` LED, lights on a key press and goes out five seconds after
-the last one; level, timeout and the step the XF86KbdBrightness keys take are
+the modifier. A keyboard backlight the kernel exposes as a bare
+`kbd_backlight` LED, Apple's, lights on a key press and goes out fifteen
+seconds after the last one; a vendor-prefixed LED is its firmware's and is
+left alone. Level, timeout and the step the XF86KbdBrightness keys take are
 config.h's. The status feeder is `tools/tyler-status -o` — swap in anything
 that prints a line per update. Its accent colors are Solarized unless
 `~/.config/tyler/status-colors` reassigns them (`C_VOL="^#7fbbb3ff"`, and
