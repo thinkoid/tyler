@@ -40,7 +40,9 @@ that tears tiles out into floats, fullscreen, urgency from both
 xdg-activation and the xdg system bell, clipboard and primary selection,
 server-side decorations, VT switching, keyboard repeat and libinput knobs
 (tap, natural scroll, adaptive accel) applied per-device the moment hardware
-appears, XF86 volume/brightness keys, and screen memories — per-output state
+appears, XF86 volume/brightness keys, pointer lock and confinement with
+relative motion for the games and emulators that ask (dosbox's Ctrl+F10),
+and screen memories — per-output state
 keyed by name that survives the output dying and returning, so a
 hibernate/resume cycle with a lid closed does not shred the layout.
 
@@ -62,7 +64,8 @@ shaders at high precision, symmetric anti-aliasing on every rounded edge;
 the comment in `meson.build` says why) and links it statically; install with `meson install -C
 build --skip-subprojects`, or the bundled copy's headers and archive go in
 too. An installed SceneFX is not used, because it lacks the patch. The build also produces `vkbd` and `vptr`, protocol-level
-input injectors used by the test harness; they are never installed.
+input injectors used by the test harness, and `lockptr`, the client
+that locks the pointer for the lock oracle; none of them is installed.
 `tools/tyler-status` is installed alongside the compositor — config.h names
 it by PATH.
 
@@ -107,6 +110,15 @@ one that matters: a single-output quit stays clean even when the teardown
 ordering is wrong, because the last output leaves no surviving screen to
 draw, so a one-output gate never bites. That blindness is how a segfault on
 every multi-monitor quit went unnoticed on single-display machines.
+
+`tests/lock-oracle.sh` gates pointer locking: `lockptr` maps a toplevel
+and locks on the pointer's first entry, `vptr` then moves the pointer,
+and the client must be told it is locked, must read every move as
+relative motion, and must see no absolute motion and no leave; the
+compositor must still quit clean with the lock alive. Two harness traps
+are written up in `tools/lockptr.c`: the seat's capabilities arrive
+after the registry roundtrip, and a buffer smaller than the tile never
+gets an enter.
 
 New oracles belong here. Perturb the subject and watch the gate go red
 before trusting it.

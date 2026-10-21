@@ -42,8 +42,10 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_subcompositor.h>
@@ -57,6 +59,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
 #include <wlr/util/log.h>
+#include <wlr/util/region.h>
 
 #include <scenefx/render/fx_renderer/fx_renderer.h>
 #include <scenefx/types/wlr_scene.h>
@@ -187,6 +190,12 @@ struct keyboard {
         struct wl_listener destroy;     /* virtual keyboards only */
 };
 
+/* one per live constraint: its destroy listener and nothing else */
+struct pointer_constraint {
+        struct wlr_pointer_constraint_v1 *constraint;
+        struct wl_listener destroy;
+};
+
 struct key {
         uint32_t mod;
         xkb_keysym_t keysym;
@@ -256,6 +265,19 @@ static struct wlr_cursor *cursor;
 static struct wlr_xcursor_manager *cursor_mgr;
 static struct wlr_virtual_pointer_manager_v1 *vptr_mgr;
 
+/*
+ * Pointer constraints (zwp_pointer_constraints_v1): a client locks the
+ * pointer in place or confines it to a region of its surface, and reads
+ * the movement as deltas through zwp_relative_pointer_v1 -- games and
+ * emulators (dosbox's Ctrl+F10). One constraint is active at a time:
+ * the one on the surface that holds the keyboard while the pointer is
+ * over it. constraint_update() enforces that rule wherever focus or the
+ * pointer moves; cursor_move() obeys the active one.
+ */
+static struct wlr_pointer_constraints_v1 *pointer_constraints;
+static struct wlr_relative_pointer_manager_v1 *relative_pointer_mgr;
+static struct wlr_pointer_constraint_v1 *active_constraint;
+
 static struct wl_list screens;
 static struct wl_list clients;
 static struct wl_list fstack;
@@ -272,6 +294,7 @@ static struct wl_listener new_popup_listener;
 static struct wl_listener new_input_listener;
 static struct wl_listener new_vkbd_listener;
 static struct wl_listener new_vptr_listener;
+static struct wl_listener new_constraint_listener;
 static struct wl_listener cursor_motion_listener;
 static struct wl_listener cursor_motion_absolute_listener;
 static struct wl_listener cursor_button_listener;
@@ -1604,6 +1627,134 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
  * focus(NULL) is legal and meaningful: no focusable client, seat focus
  * cleared, current_screen keeps its meaning.
  */
+/*
+ * The layout position of a constraint's surface: its root surface hangs
+ * its scene tree on surface->data (map_handler, new_popup_handler). A
+ * constraint on a subsurface reads as its root's; nobody does that.
+ */
+static int constraint_origin(const struct wlr_pointer_constraint_v1 *k,
+                             int *lx, int *ly)
+{
+        struct wlr_scene_tree *tree =
+                wlr_surface_get_root_surface(k->surface)->data;
+
+        if (0 == tree)
+                return 0;
+
+        wlr_scene_node_coords(&tree->node, lx, ly);
+        return 1;
+}
+
+/*
+ * A locked client that drew its own pointer says where it left it; the
+ * cursor reappears there, not where the lock caught it.
+ */
+static void constraint_warp_to_hint(const struct wlr_pointer_constraint_v1 *k)
+{
+        int lx, ly;
+
+        if (0 == (k->current.committed &
+                  WLR_POINTER_CONSTRAINT_V1_STATE_CURSOR_HINT))
+                return;
+        if (!constraint_origin(k, &lx, &ly))
+                return;
+
+        wlr_cursor_warp(cursor, 0, lx + k->current.cursor_hint.x,
+                        ly + k->current.cursor_hint.y);
+        wlr_seat_pointer_warp(seat, k->current.cursor_hint.x,
+                              k->current.cursor_hint.y);
+}
+
+/*
+ * Clear active_constraint BEFORE sending: a oneshot constraint destroys
+ * itself on deactivation, and the destroy handler must find it gone.
+ */
+static void constraint_deactivate(void)
+{
+        struct wlr_pointer_constraint_v1 *k = active_constraint;
+
+        if (0 == k)
+                return;
+
+        active_constraint = 0;
+        constraint_warp_to_hint(k);
+        wlr_pointer_constraint_v1_send_deactivated(k);
+        wlr_log(WLR_INFO, "pointer %s released",
+                WLR_POINTER_CONSTRAINT_V1_LOCKED == k->type ? "lock"
+                                                            : "confinement");
+}
+
+static void constraint_activate(struct wlr_pointer_constraint_v1 *k)
+{
+        if (k == active_constraint)
+                return;
+
+        constraint_deactivate();
+        active_constraint = k;
+        wlr_pointer_constraint_v1_send_activated(k);
+        wlr_log(WLR_INFO, "pointer %s active",
+                WLR_POINTER_CONSTRAINT_V1_LOCKED == k->type ? "lock"
+                                                            : "confinement");
+}
+
+/*
+ * The rule, applied after every change of keyboard or pointer focus:
+ * the constraint on the keyboard's surface is active while the pointer
+ * is over that surface, and nothing else is. A lock survives Alt+Tab
+ * away and back; while away the mouse is free.
+ */
+static void constraint_update(void)
+{
+        struct wlr_surface *kbd = seat->keyboard_state.focused_surface;
+        struct wlr_pointer_constraint_v1 *k = 0;
+
+        if (kbd && kbd == seat->pointer_state.focused_surface)
+                k = wlr_pointer_constraints_v1_constraint_for_surface(
+                        pointer_constraints, kbd, seat);
+
+        if (k)
+                constraint_activate(k);
+        else
+                constraint_deactivate();
+}
+
+static void constraint_destroy_handler(struct wl_listener *listener,
+                                       void *arg)
+{
+        struct pointer_constraint *pc =
+                wl_container_of(listener, pc, destroy);
+
+        (void)arg;
+
+        /* no deactivation message: the resource is on its way out */
+        if (pc->constraint == active_constraint) {
+                constraint_warp_to_hint(pc->constraint);
+                active_constraint = 0;
+        }
+
+        wl_list_remove(&pc->destroy.link);
+        free(pc);
+}
+
+static void new_constraint_handler(struct wl_listener *unused, void *arg)
+{
+        struct wlr_pointer_constraint_v1 *k = arg;
+        struct pointer_constraint *pc = calloc(1, sizeof *pc);
+
+        (void)unused;
+
+        if (0 == pc)
+                die("calloc failed");
+
+        pc->constraint = k;
+        LISTEN(&k->events.destroy, &pc->destroy, constraint_destroy_handler);
+        wlr_log(WLR_INFO, "pointer %s requested",
+                WLR_POINTER_CONSTRAINT_V1_LOCKED == k->type ? "lock"
+                                                            : "confinement");
+
+        constraint_update();
+}
+
 static void focus(struct client *c)
 {
         struct wlr_surface *old = seat->keyboard_state.focused_surface;
@@ -1640,6 +1791,7 @@ static void focus(struct client *c)
 
         if (0 == c) {
                 wlr_seat_keyboard_notify_clear_focus(seat);
+                constraint_update();
                 drawbars();
                 return;
         }
@@ -1658,6 +1810,7 @@ static void focus(struct client *c)
                                                c->toplevel->base->surface,
                                                0, 0, 0);
 
+        constraint_update();
         drawbars();
 }
 
@@ -3139,6 +3292,50 @@ static void process_motion(uint32_t time)
                 wlr_seat_pointer_clear_focus(seat);
                 wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
         }
+
+        /* pointer focus is settled only now; the keyboard's, in focus() */
+        constraint_update();
+}
+
+/*
+ * Every pointer movement funnels through here as a layout delta. The
+ * delta goes to the constrained client raw first: reading motion with
+ * the cursor pinned is what it locked the pointer for. Then the
+ * constraint decides what the cursor itself does: a lock pins it, a
+ * confinement clips the step to the region (wlr_region_confine slides
+ * along the edge). A compositor grab outranks both: the user is moving
+ * the window, not aiming in it.
+ */
+static void cursor_move(struct wlr_input_device *device, uint32_t time,
+                        double dx, double dy, double udx, double udy)
+{
+        wlr_relative_pointer_manager_v1_send_relative_motion(
+                relative_pointer_mgr, seat, (uint64_t)time * 1000,
+                dx, dy, udx, udy);
+
+        if (active_constraint && GRAB_NONE == grab_mode) {
+                int lx, ly;
+
+                if (WLR_POINTER_CONSTRAINT_V1_LOCKED ==
+                    active_constraint->type)
+                        return;
+
+                if (constraint_origin(active_constraint, &lx, &ly)) {
+                        double sx = cursor->x - lx, sy = cursor->y - ly;
+                        double cx, cy;
+
+                        if (!wlr_region_confine(&active_constraint->region,
+                                                sx, sy, sx + dx, sy + dy,
+                                                &cx, &cy))
+                                return;
+
+                        dx = cx - sx;
+                        dy = cy - sy;
+                }
+        }
+
+        wlr_cursor_move(cursor, device, dx, dy);
+        process_motion(time);
 }
 
 static void cursor_motion_handler(struct wl_listener *unused, void *arg)
@@ -3147,21 +3344,25 @@ static void cursor_motion_handler(struct wl_listener *unused, void *arg)
 
         (void)unused;
 
-        wlr_cursor_move(cursor, &event->pointer->base,
-                        event->delta_x, event->delta_y);
-        process_motion(event->time_msec);
+        cursor_move(&event->pointer->base, event->time_msec,
+                    event->delta_x, event->delta_y,
+                    event->unaccel_dx, event->unaccel_dy);
 }
 
+/* absolute devices (tablets, the oracle's vptr) become a delta too */
 static void cursor_motion_absolute_handler(struct wl_listener *unused,
                                            void *arg)
 {
         struct wlr_pointer_motion_absolute_event *event = arg;
+        double lx, ly;
 
         (void)unused;
 
-        wlr_cursor_warp_absolute(cursor, &event->pointer->base,
-                                 event->x, event->y);
-        process_motion(event->time_msec);
+        wlr_cursor_absolute_to_layout_coords(cursor, &event->pointer->base,
+                                             event->x, event->y, &lx, &ly);
+        cursor_move(&event->pointer->base, event->time_msec,
+                    lx - cursor->x, ly - cursor->y,
+                    lx - cursor->x, ly - cursor->y);
 }
 
 static void cursor_button_handler(struct wl_listener *unused, void *arg)
@@ -3972,6 +4173,16 @@ static void init(void)
         LISTEN(&vkbd_mgr->events.new_virtual_keyboard, &new_vkbd_listener,
                new_vkbd_handler);
 
+        pointer_constraints = wlr_pointer_constraints_v1_create(display);
+        if (0 == pointer_constraints)
+                die("wlr_pointer_constraints_v1_create failed");
+        LISTEN(&pointer_constraints->events.new_constraint,
+               &new_constraint_listener, new_constraint_handler);
+
+        relative_pointer_mgr = wlr_relative_pointer_manager_v1_create(display);
+        if (0 == relative_pointer_mgr)
+                die("wlr_relative_pointer_manager_v1_create failed");
+
         keyboard_init();
         cursor_init();
 }
@@ -4018,6 +4229,7 @@ static void fini(void)
         wl_list_remove(&new_input_listener.link);
         wl_list_remove(&new_vkbd_listener.link);
         wl_list_remove(&new_vptr_listener.link);
+        wl_list_remove(&new_constraint_listener.link);
         wl_list_remove(&cursor_motion_listener.link);
         wl_list_remove(&cursor_motion_absolute_listener.link);
         wl_list_remove(&cursor_button_listener.link);

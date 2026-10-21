@@ -91,9 +91,35 @@ vp_glue_c = custom_target(
         output : 'wlr-virtual-pointer-unstable-v1-protocol.c',
         command : [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
 
-executable('vptr', ['tools/vptr.c', vp_client_h, vp_glue_c],
-           dependencies : [wayland_client],
-           install : false)
+
+# lockptr: the pointer-lock oracle's client, never installed. Its three
+# protocols come from wayland-protocols, which ships them.
+fs = import('fs')
+wp_dir = dependency('wayland-protocols').get_variable('pkgdatadir')
+
+lp_srcs = ['tools/lockptr.c']
+foreach xml : [wp_dir / 'stable/xdg-shell/xdg-shell.xml',
+               wp_dir / 'unstable/pointer-constraints/pointer-constraints-unstable-v1.xml',
+               wp_dir / 'unstable/relative-pointer/relative-pointer-unstable-v1.xml']
+        base = fs.stem(xml)
+        lp_srcs += custom_target(
+                base + '-client-header',
+                input : xml,
+                output : base + '-client-protocol.h',
+                command : [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+        lp_srcs += custom_target(
+                base + '-glue',
+                input : xml,
+                output : base + '-protocol.c',
+                command : [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+endforeach
+
+lockptr_exe = executable('lockptr', lp_srcs,
+                         dependencies : [wayland_client],
+                         install : false)
+vptr_exe = executable('vptr', ['tools/vptr.c', vp_client_h, vp_glue_c],
+                      dependencies : [wayland_client],
+                      install : false)
 
 # Oracles. Headless, so they need no display, no GPU and no seat, and
 # run anywhere the compositor builds.
@@ -110,3 +136,10 @@ foreach n : ['1', '2', '3']
              args : [tyler_exe, n],
              timeout : 60)
 endforeach
+
+# The lock holds only if the compositor answers the constraint, feeds
+# relative motion and keeps the cursor still; a build without the two
+# protocols never even sends 'locked'.
+test('pointer-lock', files('tests/lock-oracle.sh'),
+     args : [tyler_exe, lockptr_exe, vptr_exe],
+     timeout : 60)
