@@ -884,17 +884,19 @@ static void drawbar(struct screen *s)
                         w = x;
         }
 
-        /* the title field takes the rest; select colors when current */
+        /*
+         * The title field takes the rest, in the normal colors on every
+         * screen: the viewed tags and the focused border already say
+         * which screen is current, and a highlighted strip the width of
+         * the output said it again, loudly.
+         */
         c = focustop(s);
-        sel = s == current_screen;
 
-        fill_rect(img, x, 0, w - x,
-                  s->bh, colors[sel ? COLOR_SELECT_BG : COLOR_NORMAL_BG]);
+        fill_rect(img, x, 0, w - x, s->bh, colors[COLOR_NORMAL_BG]);
 
         if (c && c->toplevel->title)
                 draw_text(img, c->toplevel->title, x + s->bh / 4,
-                          colors[sel ? COLOR_SELECT_FG : COLOR_NORMAL_FG],
-                          w, s->bh, 0);
+                          colors[COLOR_NORMAL_FG], w, s->bh, 0);
 
         bar_commit(s, buf, img);
 }
