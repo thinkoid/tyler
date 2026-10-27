@@ -125,6 +125,7 @@ struct client {
         struct wl_listener destroy;
         struct wl_listener request_fullscreen;
         struct wl_listener set_title;
+        struct wl_listener set_parent;
 
         /* live only while a decoration object exists */
         struct wl_listener set_decoration_mode;
@@ -341,6 +342,7 @@ static void mouse_move(struct client *);
 static void mouse_resize(struct client *);
 
 /* unmap must be able to kill an active grab (see grab_cancel) */
+static struct client *grab_client;
 static void grab_cancel(struct client *);
 
 #include "config.h"
@@ -368,12 +370,52 @@ static int tiled_on(struct client *c, struct screen *s)
 }
 
 /*
+ * Fullscreen modality follows the scene, not the focus history: a new
+ * client can lead fstack while still being covered. Dialogs share their
+ * fullscreen ancestor's layer, so the top dialog owns focus in turn.
+ */
+static struct client *modal_on(struct screen *s)
+{
+        struct wlr_scene_node *node;
+
+        wl_list_for_each_reverse(node, &layer_fs->children, link) {
+                struct client *c = node->data;
+
+                if (c && visible_on(c, s))
+                        return c;
+        }
+
+        return 0;
+}
+
+static struct wlr_scene_tree *client_layer(struct client *c)
+{
+        struct wlr_xdg_toplevel *t;
+
+        if (state_of(c)->fullscreen)
+                return layer_fs;
+
+        for (t = c->toplevel->parent; t; t = t->parent) {
+                struct client *p = t->base->data;
+
+                if (p && p->scene && state_of(p)->fullscreen &&
+                    visible_on(p, c->screen))
+                        return layer_fs;
+        }
+
+        return state_of(c)->floating ? layer_float : layer_tile;
+}
+
+/*
  * The focused client is never stored, only computed — a dangling
  * "current" pointer is unrepresentable.
  */
 static struct client *current_client(void)
 {
-        struct client *c;
+        struct client *c = modal_on(current_screen);
+
+        if (c)
+                return c;
 
         wl_list_for_each(c, &fstack, focus_link)
                 if (visible_on(c, current_screen))
@@ -1275,10 +1317,14 @@ static void arrange(struct screen *s)
         if (0 == s)
                 return;
 
-        wl_list_for_each(c, &clients, link)
-                if (c->screen == s)
+        /* Parents map before their dialogs; promote in that order. */
+        wl_list_for_each_reverse(c, &clients, link)
+                if (c->screen == s) {
+                        wlr_scene_node_reparent(&c->scene->node,
+                                                client_layer(c));
                         wlr_scene_node_set_enabled(&c->scene->node,
                                                    visible_on(c, s));
+                }
 
         tile(s);
         drawbar(s);
@@ -1757,13 +1803,40 @@ static void new_constraint_handler(struct wl_listener *unused, void *arg)
         constraint_update();
 }
 
+static void process_motion(uint32_t);
+
+/* A layer change must not leave a stationary pointer on a covered client. */
+static void refresh_pointer(void)
+{
+        struct wlr_surface *surface = seat->pointer_state.focused_surface;
+        struct wlr_scene_tree *tree =
+                surface ? wlr_surface_get_root_surface(surface)->data : 0;
+        struct client *c, *modal;
+
+        while (tree && 0 == tree->node.data)
+                tree = tree->node.parent;
+        c = tree ? tree->node.data : 0;
+        modal = c ? modal_on(c->screen) : 0;
+        if (modal && modal != c)
+                wlr_seat_pointer_clear_focus(seat);
+
+        /* Zero refreshes pointer focus without following it with the keyboard. */
+        process_motion(0);
+}
+
 static void focus(struct client *c)
 {
         struct wlr_surface *old = seat->keyboard_state.focused_surface;
         struct wlr_keyboard *kb;
+        struct client *modal = modal_on(c ? c->screen : current_screen);
 
-        if (c && c->toplevel->base->surface == old)
+        if (modal)
+                c = modal;
+
+        if (c && c->toplevel->base->surface == old) {
+                refresh_pointer();
                 return;
+        }
 
         if (c) {
                 wl_list_remove(&c->focus_link);
@@ -1793,7 +1866,7 @@ static void focus(struct client *c)
 
         if (0 == c) {
                 wlr_seat_keyboard_notify_clear_focus(seat);
-                constraint_update();
+                refresh_pointer();
                 drawbars();
                 return;
         }
@@ -1813,6 +1886,7 @@ static void focus(struct client *c)
                                                0, 0, 0);
 
         constraint_update();
+        refresh_pointer();
         drawbars();
 }
 
@@ -1967,6 +2041,10 @@ static void set_fullscreen(struct client *c, int on)
 
                 /* over everything, the bar included */
                 wlr_scene_node_reparent(&c->scene->node, layer_fs);
+                wlr_scene_node_raise_to_top(&c->scene->node);
+
+                if (grab_client && grab_client->screen == c->screen)
+                        grab_cancel(grab_client);
 
                 if (c->screen)
                         resize(c, c->screen->area);
@@ -1981,6 +2059,9 @@ static void set_fullscreen(struct client *c, int on)
 
         wlr_xdg_toplevel_set_fullscreen(c->toplevel, on);
         arrange(c->screen);
+
+        if (visible_on(c, current_screen))
+                focus(c);
 }
 
 static void request_fullscreen_handler(struct wl_listener *listener,
@@ -1994,6 +2075,19 @@ static void request_fullscreen_handler(struct wl_listener *listener,
         /* an unmapped client's wish is honored at map */
         if (c->scene)
                 set_fullscreen(c, c->toplevel->requested.fullscreen);
+}
+
+/* Parent changes can put a mapped dialog above or below fullscreen. */
+static void set_parent_handler(struct wl_listener *listener, void *arg)
+{
+        struct client *c = wl_container_of(listener, c, set_parent);
+
+        (void)arg;
+
+        if (c->scene) {
+                arrange(c->screen);
+                focus(current_client());
+        }
 }
 
 static void set_title_handler(struct wl_listener *listener, void *arg)
@@ -2115,7 +2209,8 @@ static void map_handler(struct wl_listener *listener, void *arg)
         }
 
         wl_list_insert(&clients, &c->link);
-        wl_list_insert(&fstack, &c->focus_link);
+        /* focus() promotes it only if fullscreen does not cover it. */
+        wl_list_insert(fstack.prev, &c->focus_link);
 
         /*
          * The tiled states, always: a terminal told it is tiled fills
@@ -2215,6 +2310,7 @@ static void toplevel_destroy_handler(struct wl_listener *listener, void *arg)
         wl_list_remove(&c->destroy.link);
         wl_list_remove(&c->request_fullscreen.link);
         wl_list_remove(&c->set_title.link);
+        wl_list_remove(&c->set_parent.link);
 
         /*
          * A client that disconnects without destroying its decoration
@@ -2293,6 +2389,8 @@ static void new_toplevel_handler(struct wl_listener *unused, void *arg)
                request_fullscreen_handler);
         LISTEN(&toplevel->events.set_title, &c->set_title,
                set_title_handler);
+        LISTEN(&toplevel->events.set_parent, &c->set_parent,
+               set_parent_handler);
 }
 
 static void popup_commit_handler(struct wl_listener *listener, void *arg)
@@ -3106,7 +3204,6 @@ static void move_prev_screen(unsigned unused)
 
 enum { GRAB_NONE, GRAB_MOVE, GRAB_RESIZE };
 
-static struct client *grab_client;
 static int grab_mode;
 static double grab_dx, grab_dy;         /* cursor offset into the client */
 static struct wlr_box grab_box;         /* geometry at grab start */
@@ -3153,6 +3250,7 @@ static void grab_drop(struct client *c)
 
         arrange(old);
         arrange(s);
+        focus(current_client());
         drawbars();
 }
 
@@ -3160,7 +3258,8 @@ static void grab_start(struct client *c, int mode)
 {
         struct state *state = state_of(c);
 
-        if (state->fullscreen)
+        if (state->fullscreen ||
+            (modal_on(c->screen) && modal_on(c->screen) != c))
                 return;
 
         /* dragging a tile tears it out of the tiling, dwm-style */
@@ -3235,6 +3334,11 @@ static void process_motion(uint32_t time)
 
         c = client_at(cursor->x, cursor->y, &surface, &sx, &sy);
 
+        if (c && modal_on(c->screen) && modal_on(c->screen) != c) {
+                c = 0;
+                surface = 0;
+        }
+
         /*
          * The implicit grab: while a button is down, the surface that
          * took the press keeps the motion stream wherever the cursor
@@ -3256,9 +3360,10 @@ static void process_motion(uint32_t time)
                         int lx, ly;
 
                         wlr_scene_node_coords(&tree->node, &lx, &ly);
-                        wlr_seat_pointer_notify_motion(seat, time,
-                                                       cursor->x - lx,
-                                                       cursor->y - ly);
+                        if (time)
+                                wlr_seat_pointer_notify_motion(seat, time,
+                                                               cursor->x - lx,
+                                                               cursor->y - ly);
                         return;
                 }
         }
@@ -3271,7 +3376,7 @@ static void process_motion(uint32_t time)
                                           cursor->x, cursor->y);
         s = out ? out->data : 0;
 
-        if (s && s != current_screen) {
+        if (time && s && s != current_screen) {
                 current_screen = s;
 
                 if (0 == c)
@@ -3284,12 +3389,13 @@ static void process_motion(uint32_t time)
          * skipped the seat entirely (computed said "already current"
          * while the keyboard sat on another screen's client).
          */
-        if (c)
+        if (time && c)
                 focus(c);
 
         if (surface) {
                 wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
-                wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+                if (time)
+                        wlr_seat_pointer_notify_motion(seat, time, sx, sy);
         } else {
                 wlr_seat_pointer_clear_focus(seat);
                 wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");

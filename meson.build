@@ -102,16 +102,22 @@ foreach xml : [wp_dir / 'stable/xdg-shell/xdg-shell.xml',
                wp_dir / 'unstable/pointer-constraints/pointer-constraints-unstable-v1.xml',
                wp_dir / 'unstable/relative-pointer/relative-pointer-unstable-v1.xml']
         base = fs.stem(xml)
-        lp_srcs += custom_target(
+        header = custom_target(
                 base + '-client-header',
                 input : xml,
                 output : base + '-client-protocol.h',
                 command : [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
-        lp_srcs += custom_target(
+        glue = custom_target(
                 base + '-glue',
                 input : xml,
                 output : base + '-protocol.c',
                 command : [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+        lp_srcs += [header, glue]
+        if base == 'xdg-shell'
+                xdg_srcs = [header, glue]
+        elif base == 'pointer-constraints-unstable-v1'
+                constraint_srcs = [header, glue]
+        endif
 endforeach
 
 lockptr_exe = executable('lockptr', lp_srcs,
@@ -143,3 +149,13 @@ endforeach
 test('pointer-lock', files('tests/lock-oracle.sh'),
      args : [tyler_exe, lockptr_exe, vptr_exe],
      timeout : 60)
+
+# A real client checks fullscreen focus against keyboard and pointer events.
+fullscreen_client = executable('fullscreen-client',
+        ['tests/fullscreen-client.c', vk_client_h, vk_glue_c,
+         vp_client_h, vp_glue_c] + xdg_srcs + constraint_srcs,
+        dependencies : [wayland_client, xkbcommon],
+        install : false)
+
+test('fullscreen-modality', files('tests/fullscreen-oracle.sh'),
+     args : [tyler_exe, fullscreen_client], timeout : 60)

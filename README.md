@@ -89,6 +89,15 @@ that prints a line per update. Its accent colors are Solarized unless
 `~/.config/tyler/status-colors` reassigns them (`C_VOL="^#7fbbb3ff"`, and
 likewise `C_NET`, `C_CPU`, `C_TMP`, `C_BAT`, `C_CHG`, `C_RED`).
 
+Fullscreen owns focus on its monitor and visible tags. Alt+Tab and the
+focus-cycle keys cannot select a covered window, and a newly opened window
+stays underneath. A fullscreen application's dialogs are raised above it;
+the top dialog owns keyboard and pointer input on that monitor until it
+closes. Other monitors and tag views remain accessible. Alt+t exits
+fullscreen and tiles the selected window. Closing the top fullscreen
+window restores focus to the fullscreen window below it, or to an ordinary
+window if none remains.
+
 Testing
 -------
 
@@ -119,6 +128,12 @@ compositor must still quit clean with the lock alive. Two harness traps
 are written up in `tools/lockptr.c`: the seat's capabilities arrive
 after the registry roundtrip, and a buffer smaller than the tile never
 gets an enter.
+
+`tests/fullscreen-oracle.sh` runs real xdg-shell clients on two isolated
+headless outputs. It checks keyboard and pointer focus, fullscreen entry,
+blocked focus changes, pointer lock, dialogs, monitor and tag changes,
+fullscreen exit, and closing windows. It never uses the running desktop's
+Wayland socket.
 
 New oracles belong here. Perturb the subject and watch the gate go red
 before trusting it.
