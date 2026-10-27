@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# Check fullscreen modality with two isolated headless outputs.
-# Usage: fullscreen-oracle.sh TYLER FULLSCREEN_CLIENT
+# Check fullscreen modality or monocle with two isolated headless outputs.
+# Usage: fullscreen-oracle.sh TYLER FULLSCREEN_CLIENT [--monocle]
 # Example: ./tests/fullscreen-oracle.sh ./build/tyler ./build/fullscreen-client
 # OpenAI LeChuck
 
@@ -9,6 +9,7 @@
 
 tyler=$1
 client=$2
+shift 2
 runtime=
 pid=
 
@@ -36,7 +37,7 @@ run_oracle() {
         socket=$(sed -n 's/.*running on \(wayland-[0-9]*\).*/\1/p' "$runtime/log")
         [ -n "$socket" ] || return 1
         echo "### fullscreen client:"
-        XDG_RUNTIME_DIR="$runtime" WAYLAND_DISPLAY="$socket" "$client" || return 1
+        XDG_RUNTIME_DIR="$runtime" WAYLAND_DISPLAY="$socket" "$client" "$@" || return 1
         kill -TERM "$pid" || return 1
         wait "$pid"
         result=$?
@@ -56,7 +57,7 @@ WLR_RENDERER_ALLOW_SOFTWARE=1 WLR_HEADLESS_OUTPUTS=2 \
         "$tyler" > "$runtime/log" 2>&1 &
 pid=$!
 
-if ! run_oracle; then
+if ! run_oracle "$@"; then
         echo "### compositor log:" >&2
         cat "$runtime/log" >&2
         exit 1

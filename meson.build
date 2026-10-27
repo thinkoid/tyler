@@ -159,3 +159,7 @@ fullscreen_client = executable('fullscreen-client',
 
 test('fullscreen-modality', files('tests/fullscreen-oracle.sh'),
      args : [tyler_exe, fullscreen_client], timeout : 60)
+
+# Exercise per-window tiling/fullscreen and the per-monitor monocle toggle.
+test('monocle', files('tests/fullscreen-oracle.sh'),
+     args : [tyler_exe, fullscreen_client, '--monocle'], timeout : 60)

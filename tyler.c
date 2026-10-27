@@ -143,7 +143,7 @@ struct screen {
 
         unsigned tags;
         float master_ratio;
-        int showbar, bh;
+        int showbar, bh, monocle;
 
         struct wlr_scene_buffer *bar;
 
@@ -162,7 +162,7 @@ struct screen_memory {
         char name[64];
         unsigned tags;
         float master_ratio;
-        int showbar;
+        int showbar, monocle;
 };
 
 struct popup {
@@ -330,7 +330,9 @@ static void focus_prev_screen(unsigned);
 static void focus_next_screen(unsigned);
 static void move_prev_screen(unsigned);
 static void move_next_screen(unsigned);
-static void tile_current(unsigned);
+static void toggle_tiling(unsigned);
+static void toggle_fullscreen(unsigned);
+static void toggle_monocle(unsigned);
 static void view_tag(unsigned);
 static void change_tag(unsigned);
 static void menu_open(unsigned);
@@ -1255,6 +1257,7 @@ static void screen_memory_save(struct screen *s)
         m->tags = s->tags;
         m->master_ratio = s->master_ratio;
         m->showbar = s->showbar;
+        m->monocle = s->monocle;
 }
 
 static void resize(struct client *, struct wlr_box);
@@ -1310,6 +1313,30 @@ static void tile(struct screen *s)
         }
 }
 
+/*
+ * Every tile fills the same work area, retaining the normal outer gap.
+ * Floats and fullscreen keep their own layers and geometry. Preserve
+ * the last focused tile on top even when a float currently has focus.
+ */
+static void monocle(struct screen *s)
+{
+        struct client *c;
+        struct wlr_box r = {
+                s->warea.x + gap, s->warea.y + gap,
+                s->warea.width - 2 * gap, s->warea.height - 2 * gap
+        };
+
+        wl_list_for_each(c, &clients, link)
+                if (tiled_on(c, s))
+                        resize(c, r);
+
+        wl_list_for_each(c, &fstack, focus_link)
+                if (tiled_on(c, s)) {
+                        wlr_scene_node_raise_to_top(&c->scene->node);
+                        break;
+                }
+}
+
 static void arrange(struct screen *s)
 {
         struct client *c;
@@ -1326,7 +1353,10 @@ static void arrange(struct screen *s)
                                                    visible_on(c, s));
                 }
 
-        tile(s);
+        if (s->monocle)
+                monocle(s);
+        else
+                tile(s);
         drawbar(s);
 }
 
@@ -1596,6 +1626,7 @@ static void new_output_handler(struct wl_listener *unused, void *arg)
         s->tags = m ? m->tags : 1;
         s->master_ratio = m ? m->master_ratio : master_ratio;
         s->showbar = m ? m->showbar : showbar;
+        s->monocle = m ? m->monocle : 0;
         s->bh = font->height + 2;
         s->bar = wlr_scene_buffer_create(layer_bar, 0);
 
@@ -3067,30 +3098,45 @@ static void change_tag(unsigned n)
         focus(current_client());
 }
 
-static void set_fullscreen(struct client *, int);
-
-static void tile_current(unsigned unused)
+/* Fullscreen has its own toggle; tiling never changes its saved state. */
+static void toggle_tiling(unsigned unused)
 {
         struct client *c = current_client();
         struct state *state;
 
         (void)unused;
 
-        if (0 == c)
+        if (0 == c || state_of(c)->fullscreen)
                 return;
 
-        /* leave fullscreen through the mechanism — the client must
-         * hear about it, and the buffer flip restores the saved state */
-        if (state_of(c)->fullscreen)
-                set_fullscreen(c, 0);
-
         state = state_of(c);
+        state->floating = !state->floating;
+        arrange(c->screen);
+        focus(c);
+}
 
-        if (state->floating) {
-                state->floating = 0;
-                wlr_scene_node_reparent(&c->scene->node, layer_tile);
-                arrange(current_screen);
-        }
+static void toggle_fullscreen(unsigned unused)
+{
+        struct client *c = current_client();
+
+        (void)unused;
+
+        if (c)
+                set_fullscreen(c, !state_of(c)->fullscreen);
+}
+
+static void toggle_monocle(unsigned unused)
+{
+        struct screen *s = current_screen;
+
+        (void)unused;
+
+        if (0 == s)
+                return;
+
+        s->monocle = !s->monocle;
+        arrange(s);
+        focus(current_client());
 }
 
 static void focus_other_screen(struct screen *s)

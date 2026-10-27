@@ -89,14 +89,34 @@ that prints a line per update. Its accent colors are Solarized unless
 `~/.config/tyler/status-colors` reassigns them (`C_VOL="^#7fbbb3ff"`, and
 likewise `C_NET`, `C_CPU`, `C_TMP`, `C_BAT`, `C_CHG`, `C_RED`).
 
+Three toggles control window placement:
+
+| Binding | Action |
+|---|---|
+| Alt+t | Toggle the selected window between tiled and floating |
+| Alt+f | Toggle fullscreen for the selected window |
+| Alt+m | Toggle monocle for the current monitor |
+
+Monocle gives every visible tiled window the same area: the monitor's
+work area inside the configured outer gap. The bar and borders remain.
+Focus cycling raises the selected tile; floating windows keep their own
+geometry above the tiles. A second Alt+m restores master/stack tiling.
+The layout belongs to the monitor, follows tag changes, and is saved with
+the monitor's other state when an output disappears and returns.
+
+Alt+t leaves a newly floating window at its current geometry. Pressing it
+again returns that window to the monitor's layout. It has no effect while
+the selected window is fullscreen; Alt+f restores the window's prior tiled
+or floating state. Alt+m can change the underlying layout while a window
+is fullscreen, without changing that window's fullscreen state.
+
 Fullscreen owns focus on its monitor and visible tags. Alt+Tab and the
 focus-cycle keys cannot select a covered window, and a newly opened window
 stays underneath. A fullscreen application's dialogs are raised above it;
 the top dialog owns keyboard and pointer input on that monitor until it
-closes. Other monitors and tag views remain accessible. Alt+t exits
-fullscreen and tiles the selected window. Closing the top fullscreen
-window restores focus to the fullscreen window below it, or to an ordinary
-window if none remains.
+closes. Other monitors and tag views remain accessible. Closing the top
+fullscreen window restores focus to the fullscreen window below it, or to
+an ordinary window if none remains.
 
 Testing
 -------
@@ -134,6 +154,10 @@ headless outputs. It checks keyboard and pointer focus, fullscreen entry,
 blocked focus changes, pointer lock, dialogs, monitor and tag changes,
 fullscreen exit, and closing windows. It never uses the running desktop's
 Wayland socket.
+
+The same oracle with `--monocle` checks all three placement toggles,
+client geometry, visible stacking, floating windows, fullscreen restoration,
+and independent layouts on two monitors. Meson runs it as `monocle`.
 
 New oracles belong here. Perturb the subject and watch the gate go red
 before trusting it.

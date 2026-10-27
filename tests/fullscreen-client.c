@@ -1,7 +1,7 @@
 /* -*- mode: c; -*- */
 
 /*
- * Fullscreen modality oracle, by OpenAI LeChuck.
+ * Fullscreen modality and monocle oracles, by OpenAI LeChuck.
  * Two headless outputs, real xdg toplevels and virtual input. Verdicts
  * use wl_keyboard.enter/leave and xdg configure state, not activation
  * colors or compositor internals. No part of this client is installed.
@@ -294,7 +294,149 @@ static void blocked(struct window *w, uint32_t code, const char *message)
         require(enters == before, "covered window briefly received keyboard focus");
 }
 
-int main(void)
+/* Check layout behavior through client sizes and the pointer's top surface. */
+static void expect_size(struct window *w, int width, int height,
+                         const char *message)
+{
+        settle();
+        require(w->width == width && w->height == height, message);
+        printf("ok: %s\n", message);
+        fflush(stdout);
+}
+
+static void test_monocle(void)
+{
+        struct window a, b, floating, other_a, other_b, tag_a, tag_b;
+        int width, height, aw, ah, bw, bh, ow, oh;
+
+        move(100, 100);
+        chord(KEY_T);
+        chord(KEY_F);
+        chord(KEY_M);
+        chord(KEY_M);
+        open_window(&a, "A", 0);
+        width = a.width;
+        height = a.height;
+        open_window(&b, "B", 0);
+        aw = a.width; ah = a.height;
+        bw = b.width; bh = b.height;
+        require(aw < width && bw < width, "two windows start in master/stack");
+
+        chord(KEY_M);
+        expect(&b, "monocle keeps the selected tile focused");
+        expect_size(&a, width, height, "monocle expands A to the single-tile area");
+        expect_size(&b, width, height, "monocle expands B to the same area");
+        require(!a.full && !b.full, "monocle does not set fullscreen state");
+        move(640, 360);
+        require(pointed == b.surface, "focused B is visible on top");
+        chord(KEY_J);
+        expect(&a, "Alt+j cycles freely in monocle");
+        require(pointed == a.surface, "cycling raises A under a stationary pointer");
+        chord(KEY_TAB);
+        expect(&b, "Alt+Tab switches monocle tiles");
+        require(pointed == b.surface, "Alt+Tab raises B");
+
+        chord(KEY_M);
+        expect_size(&a, aw, ah, "second Alt+m restores A's tiled geometry");
+        expect_size(&b, bw, bh, "second Alt+m restores B's tiled geometry");
+        chord(KEY_T);
+        expect_size(&a, width, height, "Alt+t removes only B from tiling");
+        expect_size(&b, bw, bh, "floating B retains its geometry");
+        chord(KEY_F);
+        expect(&b, "Alt+f enters fullscreen on floating B");
+        require(b.full && b.width == 1280 && b.height == 720,
+                "fullscreen covers the entire output");
+        chord(KEY_T);
+        require(b.full, "Alt+t does not change fullscreen state");
+        chord(KEY_F);
+        require(!b.full, "second Alt+f exits fullscreen");
+        expect_size(&b, bw, bh, "fullscreen exit restores floating geometry");
+        expect_size(&a, width, height, "fullscreen exit keeps B out of tiling");
+        chord(KEY_T);
+        expect_size(&a, aw, ah, "second Alt+t restores A's tile");
+        expect_size(&b, bw, bh, "second Alt+t returns B to tiling");
+
+        chord(KEY_M);
+        open_window(&floating, "floating", &b);
+        expect_size(&floating, 300, 200, "monocle leaves a floating window's size alone");
+        chord(KEY_M);
+        expect_size(&floating, 300, 200, "leaving monocle preserves floating geometry");
+        chord(KEY_M);
+        chord(KEY_T);
+        expect_size(&floating, width, height, "Alt+t joins a float to monocle");
+        chord(KEY_T);
+        chord(KEY_M);
+        expect_size(&a, aw, ah, "Alt+t removes the floated window from the layout");
+        expect_size(&floating, width, height, "floating window stays unchanged on layout switch");
+        close_window(&floating);
+        expect(&b, "closing float restores B");
+
+        chord(KEY_M);
+        chord(KEY_F);
+        require(b.full, "fullscreen can be entered from monocle");
+        blocked(&b, KEY_J, "fullscreen modality still blocks monocle cycling");
+        chord(KEY_F);
+        expect_size(&b, width, height, "fullscreen exit returns to monocle");
+        require(!b.full, "monocle after fullscreen is not fullscreen");
+        chord(KEY_F);
+        chord(KEY_M);
+        require(b.full && b.width == 1280 && b.height == 720,
+                "layout toggle does not disturb fullscreen");
+        chord(KEY_F);
+        expect_size(&b, bw, bh, "fullscreen exit uses the newly selected tiled layout");
+
+        chord(KEY_M);
+        chord(KEY_DOT);
+        open_window(&other_a, "other A", 0);
+        open_window(&other_b, "other B", 0);
+        ow = other_a.width; oh = other_a.height;
+        require(ow < width && other_b.width < width,
+                "monocle is local to its monitor");
+        expect_size(&a, width, height, "other monitor activity preserves monocle");
+        chord(KEY_M);
+        expect_size(&other_a, width, height, "second monitor can independently enter monocle");
+        chord(KEY_COMMA);
+        expect(&b, "return to primary monitor restores focused monocle tile");
+        chord(KEY_M);
+        expect_size(&a, aw, ah, "primary monitor can independently leave monocle");
+        expect_size(&other_a, width, height, "second monitor remains in monocle");
+
+        chord(KEY_2);
+        open_window(&tag_a, "tag A", 0);
+        open_window(&tag_b, "tag B", 0);
+        require(tag_a.width < width && tag_b.width < width,
+                "new tag uses current monitor layout");
+        chord(KEY_M);
+        expect_size(&tag_a, width, height, "monocle applies to the viewed tag");
+        chord(KEY_1);
+        expect_size(&a, width, height, "monitor layout follows tag switching");
+        expect_size(&b, width, height, "returning tag arranges every tile");
+        move(640, 360);
+        require(pointed == b.surface, "returning tag shows its focused tile");
+        chord(KEY_2);
+        close_window(&tag_b);
+        expect(&tag_a, "closing top monocle window reveals the previous tile");
+        close_window(&tag_a);
+        chord(KEY_1);
+        close_window(&b);
+        expect(&a, "last monocle tile remains usable");
+        close_window(&a);
+        chord(KEY_M);
+        open_window(&a, "new A", 0);
+        open_window(&b, "new B", 0);
+        require(a.width < width && b.width < width,
+                "monocle can be toggled off on an empty tag");
+        close_window(&b);
+        close_window(&a);
+        chord(KEY_DOT);
+        chord(KEY_M);
+        expect_size(&other_a, ow, oh, "second monitor restores its original layout");
+        close_window(&other_b);
+        close_window(&other_a);
+        puts("monocle oracle: PASS");
+}
+
+int main(int argc, char **argv)
 {
         struct window a, b, c, dialog, other, second;
         struct wl_registry *registry;
@@ -308,6 +450,8 @@ int main(void)
         int fd;
         size_t size;
 
+        require(argc == 1 || (argc == 2 && strcmp(argv[1], "--monocle") == 0),
+                "usage: fullscreen-client [--monocle]");
         display = wl_display_connect(0);
         require(display != 0, "connect");
         registry = wl_display_get_registry(display);
@@ -336,6 +480,12 @@ int main(void)
         wl_keyboard_add_listener(keyboard, &keyboard_listener, 0);
         pointer = wl_seat_get_pointer(seat);
         wl_pointer_add_listener(pointer, &pointer_listener, 0);
+
+        if (argc == 2) {
+                test_monocle();
+                wl_display_disconnect(display);
+                return 0;
+        }
 
         move(100, 100);
         open_window(&a, "A", 0);
@@ -390,9 +540,9 @@ int main(void)
         chord(KEY_1);
         expect(&a, "returning tag selects fullscreen A");
 
-        chord(KEY_T);
-        expect(&a, "Alt+t exits fullscreen with A focused");
-        require(!a.full, "Alt+t sent non-fullscreen configure");
+        chord(KEY_F);
+        expect(&a, "Alt+f exits fullscreen with A focused");
+        require(!a.full, "Alt+f sent non-fullscreen configure");
         chord(KEY_J);
         require(focused != a.surface, "cycling resumes after fullscreen exit");
         printf("ok: cycling resumes after fullscreen exit\n");

@@ -150,7 +150,9 @@ static const struct key keys[] = {
         { 0, XKB_KEY_XF86KbdBrightnessUp,   kbd_backlight_up,   0 },
         { 0, XKB_KEY_XF86KbdBrightnessDown, kbd_backlight_down, 0 },
 
-        { MODKEY,   XKB_KEY_t,       tile_current,      0 },
+        { MODKEY,   XKB_KEY_t,       toggle_tiling,     0 },
+        { MODKEY,   XKB_KEY_f,       toggle_fullscreen, 0 },
+        { MODKEY,   XKB_KEY_m,       toggle_monocle,    0 },
         { MODSHIFT, XKB_KEY_Q,       quit,              0 },
 
         TAGKEYS(XKB_KEY_1, XKB_KEY_exclam,      1),
